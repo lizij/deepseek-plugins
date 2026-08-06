@@ -29,11 +29,14 @@ export async function fetchBalance(): Promise<{ result: BalanceResult | null; er
   try {
     const apiKey = await getKey('deepseek');
     if (!apiKey) {
-      return { result: null, error: '未配置 API Key，请执行: node packages/shared/dist/cli.js set deepseek' };
+      return { result: null, error: '未配置 API Key，请执行: deepseek-plugin-cli auth set deepseek' };
     }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
     const resp = await fetch(BALANCE_URL, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
     if (!resp.ok) {
       return { result: null, error: `API 请求失败 (HTTP ${resp.status})` };
     }

@@ -8,6 +8,9 @@ export interface AnalyzeParams {
   detail?: 'low' | 'high';
 }
 
+/** 默认超时时间（毫秒）。 */
+const FETCH_TIMEOUT_MS = 120_000;
+
 /**
  * 调用 OpenAI 兼容的视觉模型分析图片，返回模型文本响应。
  * 接收本地路径、http(s) URL 或 data: base64 URI 三种图片输入。
@@ -16,11 +19,13 @@ export async function analyzeImage(
   config: VisionConfig,
   params: AnalyzeParams,
 ): Promise<string> {
-  const imageUrl = await normalizeImage(params.image);
+  const imageUri = await normalizeImage(params.image);
   const detail = params.detail ?? 'high';
   const prompt = params.prompt?.trim() || '请详细描述这张图片的内容。';
 
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -36,14 +41,15 @@ export async function analyzeImage(
             { type: 'text', text: prompt },
             {
               type: 'image_url',
-              image_url: { url: imageUrl, detail },
+              image_url: { url: imageUri, detail },
             },
           ],
         },
       ],
       max_tokens: 4096,
     }),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');

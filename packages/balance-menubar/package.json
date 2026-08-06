@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsup src/balance.ts src/index.ts --format esm --dts --clean --out-dir dist && mv dist/index.js dist/balance.1h.js && chmod +x dist/balance.1h.js",
-    "dev": "tsup src/index.ts --format esm --watch --out-dir dist && mv dist/index.js dist/balance.1h.js"
+    "dev": "tsup src/index.ts --format esm --watch --out-dir dist && mv dist/index.js dist/balance.1h.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@deepseek-plugins/shared": "workspace:*"
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^22.5.0",
     "tsup": "^8.2.4",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
   }
 }

@@ -9,7 +9,7 @@ if (!result) {
   printSeparator();
   printLine(error ?? '未知错误');
   printSeparator();
-  printLine('配置 Key | bash=node param1=packages/shared/dist/cli.js param2=set param3=deepseek terminal=true');
+  printLine('配置 Key | bash=deepseek-plugin-cli param1=auth param2=set param3=deepseek terminal=true');
   printLine('刷新 | refresh=true');
   process.exit(0);
 }
@@ -45,7 +45,7 @@ printSeparator();
 printLine('可用状态: ' + (result.isAvailable ? '是' : '否'));
 printSeparator();
 printLine('刷新 | refresh=true');
-printLine('配置 Key | bash=node param1=packages/shared/dist/cli.js param2=set param3=deepseek terminal=true');
+printLine('配置 Key | bash=deepseek-plugin-cli param1=auth param2=set param3=deepseek terminal=true');
 printLine('查看文档 | href=https://api-docs.deepseek.com/zh-cn/api/get-user-balance');
 
 // --- helpers ---

@@ -45,10 +45,21 @@ describe('vision', () => {
     expect(stderr).toContain('仅支持 low 或 high');
   });
 
-  it('vision 未配置视觉模型时报错', () => {
-    const { stderr, status } = runOrError('vision /tmp/test.png');
+  it('vision 本地文件不存在时报错', () => {
+    const { stderr, status } = runOrError('vision /tmp/nonexistent-file-xyz.png');
     expect(status).not.toBe(0);
-    // 未配置时会提示缺少配置
-    expect(stderr).toContain('视觉模型');
+    expect(stderr).toContain('ENOENT');
+  });
+
+  it('vision config --help 显示选项', () => {
+    const out = run('vision config --help');
+    expect(out).toContain('--base-url');
+    expect(out).toContain('--model');
+  });
+
+  it('vision config 无参数时报错', () => {
+    const { stderr, status } = runOrError('vision config');
+    expect(status).not.toBe(0);
+    expect(stderr).toContain('请提供');
   });
 });

@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "tsup src/cli.ts src/vision.ts src/image.ts src/config.ts --format esm --dts --clean && chmod +x dist/cli.js",
-    "dev": "tsup src/cli.ts src/vision.ts --format esm --watch"
+    "dev": "tsup src/cli.ts src/vision.ts --format esm --watch",
+    "test": "vitest run"
   },
   "dependencies": {
     "@deepseek-plugins/shared": "workspace:*",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@types/node": "^22.5.0",
     "tsup": "^8.2.4",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
   }
 }

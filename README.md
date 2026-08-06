@@ -1,2 +1,1 @@
-# deepseek-plugins
-personal deekseek plugins
+AGENTS.md

@@ -17,7 +17,8 @@
   },
   "scripts": {
     "build": "tsup src/cli.ts src/credentials.ts --format esm --dts --clean && chmod +x dist/cli.js",
-    "dev": "tsup src/cli.ts src/credentials.ts --format esm --watch"
+    "dev": "tsup src/cli.ts src/credentials.ts --format esm --watch",
+    "test": "vitest run"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^22.5.0",
     "tsup": "^8.2.4",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
   }
 }
