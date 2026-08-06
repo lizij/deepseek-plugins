@@ -1,0 +1,55 @@
+import { getKey } from '@deepseek-plugins/shared';
+
+const BALANCE_URL = 'https://api.deepseek.com/user/balance';
+
+export interface BalanceInfo {
+  currency: string;
+  totalBalance: string;
+  grantedBalance: string;
+  toppedUpBalance: string;
+}
+
+export interface BalanceResult {
+  isAvailable: boolean;
+  balances: BalanceInfo[];
+}
+
+interface ApiResponse {
+  is_available: boolean;
+  balance_infos: Array<{
+    currency: string;
+    total_balance: string;
+    granted_balance: string;
+    topped_up_balance: string;
+  }>;
+}
+
+/** 获取 DeepSeek 账户余额，失败返回 null。 */
+export async function fetchBalance(): Promise<{ result: BalanceResult | null; error?: string }> {
+  try {
+    const apiKey = await getKey('deepseek');
+    if (!apiKey) {
+      return { result: null, error: '未配置 API Key，请执行: node packages/shared/dist/cli.js set deepseek' };
+    }
+    const resp = await fetch(BALANCE_URL, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    });
+    if (!resp.ok) {
+      return { result: null, error: `API 请求失败 (HTTP ${resp.status})` };
+    }
+    const data = (await resp.json()) as ApiResponse;
+    return {
+      result: {
+        isAvailable: data.is_available,
+        balances: data.balance_infos.map((b) => ({
+          currency: b.currency,
+          totalBalance: b.total_balance,
+          grantedBalance: b.granted_balance,
+          toppedUpBalance: b.topped_up_balance,
+        })),
+      },
+    };
+  } catch (err) {
+    return { result: null, error: `网络错误: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@deepseek-plugins/cli",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Unified CLI for DeepSeek plugins: API key management, vision analysis, balance query, skill management",
+  "type": "module",
+  "bin": {
+    "deepseek-plugin-cli": "./dist/deepseek-plugin-cli"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --clean --out-dir dist && mv dist/cli.js dist/deepseek-plugin-cli && chmod +x dist/deepseek-plugin-cli",
+    "dev": "tsup src/cli.ts --format esm --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-plugins/shared": "workspace:*",
+    "@deepseek-plugins/vision-analyze-helper": "workspace:*",
+    "@deepseek-plugins/balance-menubar": "workspace:*",
+    "@inquirer/prompts": "^7.0.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsup": "^8.2.4",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
+  }
+}

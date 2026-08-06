@@ -1,0 +1,27 @@
+{
+  "name": "@deepseek-plugins/balance-menubar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SwiftBar plugin showing DeepSeek account balance in macOS status bar",
+  "type": "module",
+  "main": "./dist/balance.js",
+  "types": "./dist/balance.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/balance.d.ts",
+      "import": "./dist/balance.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/balance.ts src/index.ts --format esm --dts --clean --out-dir dist && mv dist/index.js dist/balance.1h.js && chmod +x dist/balance.1h.js",
+    "dev": "tsup src/index.ts --format esm --watch --out-dir dist && mv dist/index.js dist/balance.1h.js"
+  },
+  "dependencies": {
+    "@deepseek-plugins/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsup": "^8.2.4",
+    "typescript": "^5.5.4"
+  }
+}
