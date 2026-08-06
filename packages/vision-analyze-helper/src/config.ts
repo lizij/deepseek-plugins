@@ -8,7 +8,7 @@ export interface VisionConfig {
 }
 
 /**
- * 读取视觉模型配置。
+ * 读取主视觉模型配置。
  * base_url / model / API Key 均从 Keychain 读取。
  * 任一缺失返回 null，调用方负责给出明确错误提示。
  */
@@ -18,6 +18,35 @@ export async function loadConfig(): Promise<VisionConfig | null> {
   const apiKey = await getKey('vision');
   if (!baseUrl || !model || !apiKey) return null;
   return { baseUrl, model, apiKey };
+}
+
+/**
+ * 读取全部视觉模型配置（主模型 + 备选模型），按优先级排序。
+ * 主模型从 `vision` / `vision.base_url` / `vision.model` 读取，
+ * 备选模型从 `vision.fallback.0` / `vision.fallback.0.base_url` / `vision.fallback.0.model` 等顺序读取。
+ */
+export async function loadAllConfigs(): Promise<VisionConfig[]> {
+  const configs: VisionConfig[] = [];
+  const primary = await loadConfig();
+  if (primary) configs.push(primary);
+
+  for (let i = 0; ; i++) {
+    const baseUrl = await getKey(`vision.fallback.${i}.base_url`);
+    const model = await getKey(`vision.fallback.${i}.model`);
+    const apiKey = await getKey(`vision.fallback.${i}`);
+    if (!baseUrl || !model || !apiKey) break;
+    configs.push({ baseUrl, model, apiKey });
+  }
+
+  return configs;
+}
+
+/** 获取已配置的备选模型数量（不含主模型）。 */
+export async function getFallbackCount(): Promise<number> {
+  for (let i = 0; ; i++) {
+    const apiKey = await getKey(`vision.fallback.${i}`);
+    if (!apiKey) return i;
+  }
 }
 
 /** 生成缺失配置时的引导提示文本。 */

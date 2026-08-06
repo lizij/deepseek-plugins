@@ -62,4 +62,35 @@ describe('vision', () => {
     expect(status).not.toBe(0);
     expect(stderr).toContain('请提供');
   });
+
+  describe('vision fallback', () => {
+    it('fallback --help 显示子命令', () => {
+      const out = run('vision fallback --help');
+      expect(out).toContain('add');
+      expect(out).toContain('list');
+      expect(out).toContain('remove');
+    });
+
+    it('fallback add --help 显示选项', () => {
+      const out = run('vision fallback add --help');
+      expect(out).toContain('--base-url');
+      expect(out).toContain('--model');
+    });
+
+    it('fallback add 缺少参数时报错', () => {
+      expect(() => run('vision fallback add')).toThrow();
+    });
+
+    it('fallback list 正常执行', () => {
+      const out = run('vision fallback list');
+      // 可能输出"未配置"或列出模型，不应报错
+      expect(typeof out).toBe('string');
+    });
+
+    it('fallback remove 无效索引报错', () => {
+      const { stderr, status } = runOrError('vision fallback remove abc');
+      expect(status).not.toBe(0);
+      expect(stderr).toContain('有效的备选模型索引');
+    });
+  });
 });

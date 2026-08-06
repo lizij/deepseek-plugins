@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { analyzeImage } from '../src/vision.js';
+import { analyzeImage, analyzeImageWithFallback } from '../src/vision.js';
 import type { VisionConfig } from '../src/config.js';
 
 // Mock fetch globally
@@ -15,6 +15,12 @@ const mockConfig: VisionConfig = {
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o',
   apiKey: 'sk-test-key',
+};
+
+const mockConfig2: VisionConfig = {
+  baseUrl: 'https://api.anthropic.com/v1',
+  model: 'claude-3',
+  apiKey: 'sk-fallback-key',
 };
 
 describe('vision', () => {
@@ -94,6 +100,81 @@ describe('vision', () => {
       const configWithSlash = { ...mockConfig, baseUrl: 'https://api.openai.com/v1/' };
       await analyzeImage(configWithSlash, { image: 'https://example.com/photo.png' });
       expect(mockFetch.mock.calls[0][0]).toBe('https://api.openai.com/v1/chat/completions');
+    });
+  });
+
+  describe('analyzeImageWithFallback', () => {
+    it('空配置数组时抛出异常', async () => {
+      await expect(
+        analyzeImageWithFallback([], { image: 'https://example.com/photo.png' })
+      ).rejects.toThrow('未配置任何视觉模型');
+    });
+
+    it('主模型成功时直接返回，不尝试备选', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'primary result' } }],
+        }),
+      });
+
+      const text = await analyzeImageWithFallback(
+        [mockConfig, mockConfig2],
+        { image: 'https://example.com/photo.png' },
+      );
+      expect(text).toBe('primary result');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('主模型失败时自动切换到备选', async () => {
+      // 第一次调用失败，第二次成功
+      mockFetch
+        .mockRejectedValueOnce(new Error('primary timeout'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            choices: [{ message: { content: 'fallback result' } }],
+          }),
+        });
+
+      const text = await analyzeImageWithFallback(
+        [mockConfig, mockConfig2],
+        { image: 'https://example.com/photo.png' },
+      );
+      expect(text).toBe('fallback result');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('所有模型均失败时抛出聚合错误', async () => {
+      mockFetch
+        .mockRejectedValueOnce(new Error('primary error'))
+        .mockRejectedValueOnce(new Error('fallback error'));
+
+      await expect(
+        analyzeImageWithFallback(
+          [mockConfig, mockConfig2],
+          { image: 'https://example.com/photo.png' },
+        ),
+      ).rejects.toThrow('所有视觉模型均调用失败');
+      // 错误信息应包含各模型名称
+      try {
+        await analyzeImageWithFallback([mockConfig, mockConfig2], { image: 'https://example.com/photo.png' });
+      } catch (err: any) {
+        expect(err.message).toContain('gpt-4o');
+        expect(err.message).toContain('claude-3');
+      }
+    });
+
+    it('单个模型失败时错误信息包含模型名', async () => {
+      mockFetch.mockRejectedValue(new Error('network error'));
+
+      try {
+        await analyzeImageWithFallback([mockConfig], { image: 'https://example.com/photo.png' });
+        expect.fail('should have thrown');
+      } catch (err: any) {
+        expect(err.message).toContain('[gpt-4o]');
+        expect(err.message).toContain('network error');
+      }
     });
   });
 });

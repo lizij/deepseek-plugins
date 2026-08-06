@@ -12,6 +12,8 @@
 
 执行 `deepseek-plugin-cli vision` 命令，stdout 为模型文本响应，stderr 为错误信息。
 
+支持多模型容灾：如已配置备选模型，主模型失败时会自动按优先级顺序切换，无需手动干预。
+
 ```bash
 deepseek-plugin-cli vision <图片输入> [-p "<提问内容>"] [-d low|high]
 ```
@@ -48,4 +50,9 @@ deepseek-plugin-cli vision ./photo.jpg -d low -p "这张照片里有什么物体
 
 1. 设置视觉模型 API Key：`deepseek-plugin-cli auth set vision`
 2. 配置 base_url 与 model：`deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o`
-3. `deepseek-plugin-cli` 加入 PATH
+3. （可选）添加备选模型实现容灾：
+   ```bash
+   deepseek-plugin-cli vision fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
+   deepseek-plugin-cli auth set vision.fallback.0
+   ```
+4. `deepseek-plugin-cli` 加入 PATH

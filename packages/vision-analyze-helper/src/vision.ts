@@ -65,3 +65,30 @@ export async function analyzeImage(
   if (!text) throw new Error('视觉模型未返回内容');
   return text;
 }
+
+/**
+ * 带容灾的视觉模型调用：按优先级顺序尝试多个模型配置，
+ * 任一成功即返回结果，全部失败才报错。
+ */
+export async function analyzeImageWithFallback(
+  configs: VisionConfig[],
+  params: AnalyzeParams,
+): Promise<string> {
+  if (configs.length === 0) {
+    throw new Error('未配置任何视觉模型');
+  }
+
+  const errors: string[] = [];
+  for (const config of configs) {
+    try {
+      return await analyzeImage(config, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`[${config.model}] ${msg}`);
+    }
+  }
+
+  throw new Error(
+    `所有视觉模型均调用失败 (${configs.length} 个):\n${errors.join('\n')}`,
+  );
+}

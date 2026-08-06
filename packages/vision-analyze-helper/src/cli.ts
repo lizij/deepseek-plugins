@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { loadConfig, missingConfigHint } from './config.js';
-import { analyzeImage } from './vision.js';
+import { loadAllConfigs, missingConfigHint } from './config.js';
+import { analyzeImageWithFallback } from './vision.js';
 
 const program = new Command();
 
@@ -19,17 +19,16 @@ program
       console.error('错误：--detail 仅支持 low 或 high');
       process.exit(1);
     }
-    const detail = opts.detail;
-    const config = await loadConfig();
-    if (!config) {
+    const configs = await loadAllConfigs();
+    if (configs.length === 0) {
       console.error(missingConfigHint());
       process.exit(1);
     }
     try {
-      const text = await analyzeImage(config, {
+      const text = await analyzeImageWithFallback(configs, {
         image: opts.image,
         prompt: opts.prompt,
-        detail,
+        detail: opts.detail,
       });
       process.stdout.write(text);
     } catch (err) {

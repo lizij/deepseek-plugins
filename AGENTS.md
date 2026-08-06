@@ -79,6 +79,25 @@ deepseek-plugin-cli auth set vision
 deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o
 ```
 
+#### 多模型容灾（可选）
+
+支持配置多个备选视觉模型，主模型调用失败时自动切换：
+
+```bash
+# 添加备选模型
+deepseek-plugin-cli vision fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
+# 设置备选模型的 API Key（注意索引从 0 开始）
+deepseek-plugin-cli auth set vision.fallback.0
+
+# 查看所有已配置模型
+deepseek-plugin-cli vision fallback list
+
+# 删除备选模型
+deepseek-plugin-cli vision fallback remove 0
+```
+
+调用时按优先级顺序尝试：主模型 → fallback.0 → fallback.1 → …，任一成功即返回。
+
 ### 验证
 
 ```bash
@@ -95,8 +114,11 @@ deepseek-plugin-cli vision /tmp/test.png
 deepseek-plugin-cli auth set <service>      # 设置 API Key（交互式，隐藏回显）
 deepseek-plugin-cli auth list               # 列出已注册的 service
 deepseek-plugin-cli auth unset <service>    # 删除 API Key
-deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图
-deepseek-plugin-cli vision config [--base-url <url>] [--model <name>]  # 配置视觉模型
+deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图（自动容灾切换）
+deepseek-plugin-cli vision config [--base-url <url>] [--model <name>]  # 配置主视觉模型
+deepseek-plugin-cli vision fallback add --base-url <url> --model <name>  # 添加备选视觉模型
+deepseek-plugin-cli vision fallback list    # 列出所有视觉模型
+deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
 deepseek-plugin-cli balance [--json]        # 查询余额
 deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
@@ -166,6 +188,9 @@ deepseek-plugin-cli auth list              # 列出已注册 service 名（不�
 所有包读取 Key 必须通过 `@deepseek-plugins/shared` 的 `getKey(service)`，禁止自行读取环境变量或文件。已知 service：
 
 - `deepseek` — DeepSeek 主 API Key
-- `vision` — 视觉模型 provider Key
-- `vision.base_url` — 视觉模型 API base URL
-- `vision.model` — 视觉模型名称
+- `vision` — 主视觉模型 API Key
+- `vision.base_url` — 主视觉模型 API base URL
+- `vision.model` — 主视觉模型名称
+- `vision.fallback.<N>` — 备选视觉模型 N 的 API Key
+- `vision.fallback.<N>.base_url` — 备选视觉模型 N 的 base URL
+- `vision.fallback.<N>.model` — 备选视觉模型 N 的名称
