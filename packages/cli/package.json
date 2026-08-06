@@ -8,7 +8,7 @@
     "deepseek-plugin-cli": "./dist/deepseek-plugin-cli"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --clean --out-dir dist && mv dist/cli.js dist/deepseek-plugin-cli && chmod +x dist/deepseek-plugin-cli",
+    "build": "tsup src/cli.ts --format esm --clean --out-dir dist && mv dist/cli.js dist/deepseek-plugin-cli && chmod +x dist/deepseek-plugin-cli && cp dist/deepseek-plugin-cli skill/scripts/deepseek-plugin-cli",
     "dev": "tsup src/cli.ts --format esm --watch",
     "test": "vitest run"
   },

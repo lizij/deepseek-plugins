@@ -26,6 +26,7 @@ describe('skill', () => {
   it('skill install 正常执行', () => {
     const out = run('skill install');
     expect(out).toContain('安装完成');
+    expect(out).toContain('deepseek-plugin-cli auth set deepseek');
     expect(out).toContain('deepseek-plugin-cli auth set vision');
   });
 

@@ -1,4 +1,4 @@
-# Vision Analyze Helper
+# Vision Analyze Helper（辅助识图）
 
 为纯文本模型提供辅助识图能力，帮助无视觉能力的模型（如 `deepseek-v4-pro`、`deepseek-v4-flash`）识别图片。
 
@@ -10,12 +10,12 @@
 
 ## 调用方式
 
-执行 `deepseek-plugin-cli vision` 命令，stdout 为模型文本响应，stderr 为错误信息。
+执行 `scripts/deepseek-plugin-cli vision` 命令，stdout 为模型文本响应，stderr 为错误信息。
 
 支持多模型容灾：如已配置备选模型，主模型失败时会自动按优先级顺序切换，无需手动干预。
 
 ```bash
-deepseek-plugin-cli vision <图片输入> [-p "<提问内容>"] [-d low|high]
+scripts/deepseek-plugin-cli vision <图片输入> [-p "<提问内容>"] [-d low|high]
 ```
 
 ### 参数
@@ -30,29 +30,16 @@ deepseek-plugin-cli vision <图片输入> [-p "<提问内容>"] [-d low|high]
 
 ```bash
 # 描述本地截图
-deepseek-plugin-cli vision /tmp/screenshot.png
+scripts/deepseek-plugin-cli vision /tmp/screenshot.png
 
 # 提取图片中的文字
-deepseek-plugin-cli vision https://example.com/doc.png -p "提取图片中的所有文字"
+scripts/deepseek-plugin-cli vision https://example.com/doc.png -p "提取图片中的所有文字"
 
 # 低精度快速识别
-deepseek-plugin-cli vision ./photo.jpg -d low -p "这张照片里有什么物体？"
+scripts/deepseek-plugin-cli vision ./photo.jpg -d low -p "这张照片里有什么物体？"
 ```
 
 ### 返回处理
 
 - 退出码 0：stdout 为模型文本响应，直接展示给用户，并注明"图片描述由辅助视觉模型生成"
 - 退出码非 0：stderr 含错误信息，按错误内容排查并告知用户
-
-## 前置配置
-
-首次使用前需一次性配置（详见 `skill/README.md`）：
-
-1. 设置视觉模型 API Key：`deepseek-plugin-cli auth set vision`
-2. 配置 base_url 与 model：`deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o`
-3. （可选）添加备选模型实现容灾：
-   ```bash
-   deepseek-plugin-cli vision fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
-   deepseek-plugin-cli auth set vision.fallback.0
-   ```
-4. `deepseek-plugin-cli` 加入 PATH

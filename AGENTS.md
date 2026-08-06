@@ -128,7 +128,7 @@ deepseek-plugin-cli skill update            # 更新 Skill
 
 #### TRAE
 
-确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 存入 Keychain。Skill 已配置在 `.trae/skills/vision-analyze-helper/SKILL.md`。
+确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 存入 Keychain。Skill 已配置在 `.trae/skills/deepseek-plugin-skill/SKILL.md`。
 
 #### Claude Code
 
