@@ -26,6 +26,9 @@ importers:
       '@deepseek-plugins/shared':
         specifier: workspace:*
         version: link:../shared
+      '@deepseek-plugins/token-counter':
+        specifier: workspace:*
+        version: link:../token-counter
       '@deepseek-plugins/vision-analyze-helper':
         specifier: workspace:*
         version: link:../vision-analyze-helper
@@ -69,6 +72,21 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
   packages/shared:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.5.0
+        version: 22.20.1
+      tsup:
+        specifier: ^8.2.4
+        version: 8.5.1(postcss@8.5.26)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/token-counter:
     devDependencies:
       '@types/node':
         specifier: ^22.5.0

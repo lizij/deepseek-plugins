@@ -17642,15 +17642,153 @@ function registerMenuBar(program3) {
   });
 }
 
+// ../token-counter/dist/counter.js
+var import_fs3 = require("fs");
+var import_os2 = require("os");
+var import_path3 = require("path");
+var DATA_DIR = (0, import_path3.join)((0, import_os2.homedir)(), ".deepseek-plugins");
+var LOG_FILE = (0, import_path3.join)(DATA_DIR, "token-usage.log");
+function ensureDataDir() {
+  if (!(0, import_fs3.existsSync)(DATA_DIR)) {
+    (0, import_fs3.mkdirSync)(DATA_DIR, { recursive: true, mode: 448 });
+  }
+}
+function logUsage(raw) {
+  let input;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const entry = {
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    model: input.model ?? "unknown",
+    input_tokens: input.usage?.input_tokens_this_turn ?? 0,
+    output_tokens: input.usage?.output_tokens_this_turn ?? 0
+  };
+  ensureDataDir();
+  (0, import_fs3.appendFileSync)(LOG_FILE, JSON.stringify(entry) + "\n", "utf-8");
+  return entry;
+}
+function readEntries() {
+  if (!(0, import_fs3.existsSync)(LOG_FILE)) return [];
+  const content = (0, import_fs3.readFileSync)(LOG_FILE, "utf-8").trim();
+  if (!content) return [];
+  return content.split("\n").map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter((e) => e !== null);
+}
+function generateReport(days) {
+  if (days <= 0) return [];
+  const entries = readEntries();
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1e3;
+  const filtered = entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+  const dayMap = /* @__PURE__ */ new Map();
+  for (const e of filtered) {
+    const date = e.timestamp.slice(0, 10);
+    const existing = dayMap.get(date);
+    if (existing) {
+      existing.rounds++;
+      existing.input_tokens += e.input_tokens;
+      existing.output_tokens += e.output_tokens;
+      existing.total_tokens += e.input_tokens + e.output_tokens;
+    } else {
+      dayMap.set(date, {
+        date,
+        rounds: 1,
+        input_tokens: e.input_tokens,
+        output_tokens: e.output_tokens,
+        total_tokens: e.input_tokens + e.output_tokens
+      });
+    }
+  }
+  return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+function formatNumber(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function formatReport(days) {
+  const report = generateReport(days);
+  if (report.length === 0) return `\u8FD1 ${days} \u5929\u65E0 token \u7528\u91CF\u8BB0\u5F55\u3002`;
+  const lines = [];
+  lines.push(`Token \u7528\u91CF\u7EDF\u8BA1 (\u8FD1 ${days} \u5929)`);
+  lines.push("");
+  lines.push("\u65E5\u671F         \u8F6E\u6B21    \u8F93\u5165        \u8F93\u51FA        \u603B\u8BA1");
+  lines.push("\u2500".repeat(55));
+  let totalRounds = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  for (const day of report) {
+    totalRounds += day.rounds;
+    totalInput += day.input_tokens;
+    totalOutput += day.output_tokens;
+    lines.push(
+      `${day.date}  ${String(day.rounds).padStart(5)}  ${formatNumber(day.input_tokens).padStart(8)}  ${formatNumber(day.output_tokens).padStart(8)}  ${formatNumber(day.total_tokens).padStart(8)}`
+    );
+  }
+  lines.push("\u2500".repeat(55));
+  lines.push(
+    `\u5408\u8BA1         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalInput + totalOutput).padStart(8)}`
+  );
+  lines.push("");
+  lines.push(`\u65E5\u5FD7\u6587\u4EF6: ${LOG_FILE}`);
+  return lines.join("\n");
+}
+function clearLog() {
+  ensureDataDir();
+  (0, import_fs3.writeFileSync)(LOG_FILE, "", "utf-8");
+}
+
+// src/commands/token.ts
+function registerToken(program3) {
+  const tokenCmd = program3.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u57FA\u4E8E Claude Code statusline \u6570\u636E\uFF09");
+  tokenCmd.command("log").description("\u63A5\u6536 statusline JSON\uFF08stdin\uFF09\uFF0C\u5199\u5165\u65E5\u5FD7").action(async () => {
+    const chunks = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks).toString("utf-8").trim();
+    if (!raw) {
+      console.error("\u672A\u6536\u5230 stdin \u6570\u636E");
+      process.exit(1);
+    }
+    const entry = logUsage(raw);
+    if (!entry) {
+      console.error("JSON \u89E3\u6790\u5931\u8D25");
+      process.exit(1);
+    }
+  });
+  tokenCmd.command("report").description("\u751F\u6210\u7528\u91CF\u62A5\u544A").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear", "\u6E05\u7A7A\u65E5\u5FD7").action(async (opts) => {
+    if (opts.clear) {
+      clearLog();
+      console.log("\u65E5\u5FD7\u5DF2\u6E05\u7A7A");
+      return;
+    }
+    const days = parseInt(opts.days, 10);
+    if (isNaN(days) || days <= 0) {
+      console.error("days \u5FC5\u987B\u662F\u6B63\u6574\u6570");
+      process.exit(1);
+    }
+    console.log(formatReport(days));
+  });
+}
+
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.2");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.6.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);
 registerSkill(program2);
 registerCompletion(program2);
 registerMenuBar(program2);
+registerToken(program2);
 program2.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
