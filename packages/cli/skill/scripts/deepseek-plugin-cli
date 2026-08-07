@@ -17203,7 +17203,7 @@ function registerVision(program3) {
   });
 }
 
-// ../balance-menubar/dist/chunk-ONRO2YB5.js
+// ../menubar/dist/chunk-ONRO2YB5.js
 var BALANCE_URL = "https://api.deepseek.com/user/balance";
 function formatBalance(s, currency) {
   const n = parseFloat(s);
@@ -17472,6 +17472,7 @@ _deepseek_plugin_cli() {
     'vision:\u56FE\u7247\u8BC6\u522B\u4E0E\u89C6\u89C9\u6A21\u578B\u914D\u7F6E'
     'balance:\u67E5\u8BE2 DeepSeek API \u4F59\u989D'
     'skill:\u5B89\u88C5\u4E0E\u66F4\u65B0 Skill'
+    'menubar:\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528'
   )
   _arguments -C \\
     '(-h --help)'{-h,--help}'[\u663E\u793A\u5E2E\u52A9\u4FE1\u606F]' \\
@@ -17496,7 +17497,7 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 var BASH_COMPLETION = `# \u7531 deepseek-plugin-cli completion bash \u751F\u6210
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill"
+  local subcommands="auth vision balance skill menubar"
   local auth_cmds="set get unset list"
   local vision_cmds="config fallback"
   local fallback_cmds="add list remove"
@@ -17556,14 +17557,108 @@ function registerCompletion(program3) {
   });
 }
 
+// src/commands/menubar.ts
+var import_node_child_process = require("child_process");
+var import_node_fs2 = require("fs");
+var import_node_path3 = require("path");
+var import_node_url2 = require("url");
+var import_node_os3 = require("os");
+var import_meta2 = {};
+var currentDir2 = (() => {
+  if (typeof __dirname !== "undefined") return __dirname;
+  return (0, import_node_path3.dirname)((0, import_node_url2.fileURLToPath)(import_meta2.url));
+})();
+function menuBarBinCandidates() {
+  return [
+    (0, import_node_path3.join)(currentDir2, "DeepSeekMenuBar"),
+    // release/ -> release/DeepSeekMenuBar
+    (0, import_node_path3.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
+    // dist/ -> release/DeepSeekMenuBar
+  ];
+}
+function swiftSourceCandidates() {
+  return [
+    (0, import_node_path3.join)(currentDir2, "..", "..", "packages", "menubar", "macos", "DeepSeekMenuBarApp.swift"),
+    (0, import_node_path3.join)(currentDir2, "..", "packages", "menubar", "macos", "DeepSeekMenuBarApp.swift")
+  ];
+}
+function fileExists2(path2) {
+  return new Promise((resolve) => {
+    (0, import_node_fs2.access)(path2, import_node_fs2.constants.F_OK, (err) => resolve(!err));
+  });
+}
+async function buildMenuBar() {
+  if ((0, import_node_os3.platform)() !== "darwin") {
+    console.error("\u2717 \u83DC\u5355\u680F\u5E94\u7528\u4EC5\u652F\u6301 macOS");
+    return null;
+  }
+  try {
+    (0, import_node_child_process.execSync)("which swiftc", { stdio: "pipe" });
+  } catch {
+    console.error("\u2717 \u672A\u627E\u5230 swiftc\uFF0C\u8BF7\u5B89\u88C5 Xcode Command Line Tools: xcode-select --install");
+    return null;
+  }
+  let src = null;
+  for (const candidate of swiftSourceCandidates()) {
+    if (await fileExists2(candidate)) {
+      src = candidate;
+      break;
+    }
+  }
+  if (!src) {
+    console.error("\u2717 \u672A\u627E\u5230 Swift \u6E90\u7801\uFF0C\u8BF7\u4ECE\u6E90\u7801\u4ED3\u5E93\u8FD0\u884C\u6216\u9884\u5148\u7F16\u8BD1");
+    return null;
+  }
+  const outDir = (0, import_node_path3.join)(currentDir2, "..", "release");
+  const outPath = (0, import_node_path3.join)(outDir, "DeepSeekMenuBar");
+  try {
+    (0, import_node_child_process.execSync)(`mkdir -p "${outDir}" && swiftc "${src}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os3.arch}-apple-macos13.0`, {
+      stdio: "pipe"
+    });
+    (0, import_node_child_process.execSync)(`chmod +x "${outPath}"`);
+    console.log("\u2713 \u83DC\u5355\u680F\u5E94\u7528\u7F16\u8BD1\u5B8C\u6210");
+    return outPath;
+  } catch (e) {
+    console.error("\u2717 \u7F16\u8BD1\u5931\u8D25:", e.message);
+    return null;
+  }
+}
+async function resolveMenuBarBin() {
+  for (const candidate of menuBarBinCandidates()) {
+    if (await fileExists2(candidate)) return candidate;
+  }
+  return buildMenuBar();
+}
+function registerMenuBar(program3) {
+  program3.command("menubar").description("\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528\uFF08\u663E\u793A\u4F59\u989D\uFF0C\u6BCF 10 \u5206\u949F\u5237\u65B0\uFF09").option("--build", "\u5F3A\u5236\u91CD\u65B0\u7F16\u8BD1\u83DC\u5355\u680F\u5E94\u7528").action(async (opts) => {
+    if (opts.build) {
+      const bin2 = await buildMenuBar();
+      if (!bin2) process.exit(1);
+      console.log(`\u2713 \u7F16\u8BD1\u5B8C\u6210: ${bin2}`);
+      return;
+    }
+    const bin = await resolveMenuBarBin();
+    if (!bin) process.exit(1);
+    const cliPath = process.argv[1] || "deepseek-plugin-cli";
+    const child = (0, import_node_child_process.spawn)(bin, [cliPath], {
+      detached: true,
+      stdio: "ignore"
+    });
+    child.unref();
+    console.log("\u2713 \u83DC\u5355\u680F\u5E94\u7528\u5DF2\u542F\u52A8\uFF0C\u67E5\u770B macOS \u83DC\u5355\u680F\u53F3\u4E0A\u89D2");
+    console.log("  \u9000\u51FA\u65B9\u5F0F: \u70B9\u51FB\u83DC\u5355\u680F\u56FE\u6807 \u2192 \u9000\u51FA");
+  });
+}
+
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001Skill \u5B89\u88C5").version("0.3.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);
 registerSkill(program2);
 registerCompletion(program2);
+registerMenuBar(program2);
 program2.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);

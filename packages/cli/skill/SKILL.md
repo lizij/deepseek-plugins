@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.3.0"
+  version: "0.5.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -30,6 +30,15 @@ metadata:
 ```bash
 scripts/deepseek-plugin-cli balance        # 人类可读格式
 scripts/deepseek-plugin-cli balance --json # JSON 格式
+```
+
+### 3. 菜单栏应用（MenuBar）
+
+启动原生 macOS 菜单栏应用，在菜单栏实时显示余额和可用状态，每 10 分钟自动刷新。仅支持 macOS。
+
+```bash
+scripts/deepseek-plugin-cli menubar        # 启动菜单栏应用（自动编译）
+scripts/deepseek-plugin-cli menubar --build # 强制重新编译
 ```
 
 ## 前置配置
@@ -68,5 +77,6 @@ scripts/deepseek-plugin-cli vision fallback add --base-url <url> --model <name> 
 scripts/deepseek-plugin-cli vision fallback list    # 列出所有视觉模型
 scripts/deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
 scripts/deepseek-plugin-cli balance [--json]        # 查询余额
+scripts/deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
 ```
 

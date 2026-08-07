@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { fetchBalance, formatBalance } from '@deepseek-plugins/balance-menubar';
+import { fetchBalance, formatBalance } from '@deepseek-plugins/menubar';
 
 export function registerBalance(program: Command) {
   program

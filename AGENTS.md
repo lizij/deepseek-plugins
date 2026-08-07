@@ -9,7 +9,7 @@ deepseek-plugins 是一组围绕 DeepSeek API 的个人辅助工具集合，目�
 包含以下工具：
 
 - **vision-analyze-helper**：辅助识图工具，通过调用第三方视觉模型为 DeepSeek 等纯文本模型补充图片识别能力。
-- **balance-menubar**：SwiftBar 余额状态栏，在 macOS 菜单栏实时显示 DeepSeek API 账户余额。
+- **menubar**：原生 macOS 菜单栏应用，在菜单栏实时显示 DeepSeek API 账户余额等信息，无需第三方依赖。
 
 目标用户：使用 DeepSeek API 进行日常开发的个人用户，尤其是需要识图能力和账户监控的开发者。
 
@@ -22,12 +22,13 @@ deepseek-plugins/
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 ├── scripts/
-│   └── install.sh                # 一键安装/卸载脚本
+│   ├── install.sh                # 一键安装/卸载脚本
+│   └── env.sh                    # 临时将 release/ 加入 PATH
 └── packages/
     ├── cli/                      # 统一 CLI 入口：deepseek-plugin-cli
     ├── shared/                   # 共享能力：API Key 本地安全存储
     ├── vision-analyze-helper/    # 辅助识图：视觉模型调用 + 跨 agent Skill
-    └── balance-menubar/          # SwiftBar 余额状态栏
+    └── menubar/                  # 通用菜单栏应用（Swift）
 ```
 
 ## 使用说明
@@ -38,7 +39,7 @@ deepseek-plugins/
 |------|-----------|------|
 | Node.js | ≥ 20 | 运行时 |
 | pnpm | 最新稳定版 | 包管理 |
-| SwiftBar | 可选 | 余额状态栏展示（仅 balance-menubar 需要） |
+| Xcode Command Line Tools | 可选 | 编译原生菜单栏应用（仅 macOS 需要） |
 
 ### 安装与构建
 
@@ -140,6 +141,7 @@ deepseek-plugin-cli balance [--json]        # 查询余额
 deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
 deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本
+deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
 ```
 
 ### 接入 Agent
@@ -162,11 +164,27 @@ deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本
 
 ## 部署说明
 
-### SwiftBar 余额状态栏
+### 原生菜单栏应用（推荐）
 
-将 `packages/balance-menubar/dist/balance.1h.js` 放入 SwiftBar 插件目录（默认为 `~/SwiftBar`），SwiftBar 会自动以 1 小时为间隔刷新显示 DeepSeek API 余额。
+通过 CLI 子命令启动原生 macOS 菜单栏应用，无需安装 SwiftBar 等第三方依赖：
 
-也可通过命令行查询：
+```bash
+# 启动菜单栏应用（自动编译，菜单栏显示余额，每 10 分钟刷新）
+deepseek-plugin-cli menubar
+
+# 强制重新编译
+deepseek-plugin-cli menubar --build
+```
+
+菜单栏图标为 🐳 emoji，点击下拉菜单显示：
+- **总额**：点击跳转 usage 页面
+- **可用状态**：显示账户是否可用（绿色=可用 / 红色=不可用）
+- **刷新**：点击手动刷新余额和可用状态
+- **退出**：关闭菜单栏应用
+
+余额和可用状态每 10 分钟自动刷新一次。
+
+也可通过命令行查询余额：
 
 ```bash
 deepseek-plugin-cli balance

@@ -108,6 +108,7 @@ _deepseek_plugin_cli() {
     'vision:图片识别与视觉模型配置'
     'balance:查询 DeepSeek API 余额'
     'skill:安装与更新 Skill'
+    'menubar:启动 macOS 菜单栏应用'
   )
   _arguments -C \\
     '(-h --help)'{-h,--help}'[显示帮助信息]' \\
@@ -134,7 +135,7 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 const BASH_COMPLETION = `# 由 deepseek-plugin-cli completion bash 生成
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill"
+  local subcommands="auth vision balance skill menubar"
   local auth_cmds="set get unset list"
   local vision_cmds="config fallback"
   local fallback_cmds="add list remove"
