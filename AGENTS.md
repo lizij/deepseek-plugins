@@ -166,6 +166,22 @@ deepseek-plugin-cli vision <图片路径|URL|base64> [-p "提问内容"] [-d low
 - 代码风格：函数保持原子性，核心逻辑不耦合外部状态校验；API 注释简洁（一两句说明功能），避免描述实现细节。
 - 文档/方案禁止包含本地绝对路径、真实 ID 等敏感信息，统一使用相对路径。
 
+### Version 自更新规则
+
+版本号格式为 `major.minor.patch`（三位数字），从 `0.0.1` 开始自增。每次改动后必须同步更新以下三处版本号：
+
+- `packages/cli/package.json` — `version` 字段
+- `packages/cli/src/cli.ts` — `.version()` 调用
+- `packages/cli/skill/SKILL.md` — `metadata.version` 字段
+
+升级规则：
+
+| 变更类型 | 升级位 | 示例 |
+|---------|--------|------|
+| 重大功能新增、更新或删除 | major | 0.0.1 → 1.0.0 |
+| 普通功能新增或修改较多 | minor | 0.0.1 → 0.1.0 |
+| 常规文档整理、bug 修复 | patch | 0.0.1 → 0.0.2 |
+
 ## 🔒 API Key 安全红线（强制）
 
 DeepSeek API Key 及任何第三方视觉模型 Key 属于敏感凭据，**绝对禁止**：
