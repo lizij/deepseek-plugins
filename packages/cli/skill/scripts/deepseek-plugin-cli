@@ -17285,7 +17285,6 @@ var currentDir = (() => {
   if (typeof __dirname !== "undefined") return __dirname;
   return (0, import_node_path2.dirname)((0, import_node_url.fileURLToPath)(import_meta.url));
 })();
-var SKILL_SOURCE_DIR = (0, import_node_path2.join)(currentDir, "..", "skill");
 var SKILL_NAME = "deepseek-plugin-skill";
 var TRAE_SKILL_DIR = (0, import_node_path2.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
 var TRAE_SKILL_FILE = (0, import_node_path2.join)(TRAE_SKILL_DIR, "SKILL.md");
@@ -17298,15 +17297,26 @@ async function fileExists(path2) {
     return false;
   }
 }
+async function findSkillSourceDir() {
+  const candidates = [
+    (0, import_node_path2.join)(currentDir, "..", "skill"),
+    // packages/cli/dist -> packages/cli/skill
+    (0, import_node_path2.join)(currentDir, "deepseek-plugin-skill")
+    // release/ -> release/deepseek-plugin-skill
+  ];
+  for (const dir of candidates) {
+    if (await fileExists((0, import_node_path2.join)(dir, "SKILL.md"))) return dir;
+  }
+  return null;
+}
 async function installSkill(targetDir) {
-  const sourceExists = await fileExists((0, import_node_path2.join)(SKILL_SOURCE_DIR, "SKILL.md"));
-  if (!sourceExists) {
-    console.error(`\u2717 \u6E90 Skill \u76EE\u5F55\u4E0D\u5B58\u5728\u6216\u4E0D\u5B8C\u6574: ${SKILL_SOURCE_DIR}`);
-    console.error("  \u8BF7\u5148\u6267\u884C pnpm -r build");
+  const sourceDir = await findSkillSourceDir();
+  if (!sourceDir) {
+    console.error("\u2717 \u672A\u627E\u5230\u6E90 Skill \u76EE\u5F55\uFF0C\u8BF7\u5148\u6267\u884C pnpm -r build");
     process.exit(1);
   }
   await (0, import_promises2.mkdir)(targetDir, { recursive: true });
-  await (0, import_promises2.cp)(SKILL_SOURCE_DIR, targetDir, { recursive: true });
+  await (0, import_promises2.cp)(sourceDir, targetDir, { recursive: true });
   console.log(`  \u2713 ${SKILL_NAME} -> ${targetDir}`);
 }
 function registerSkill(program3) {
@@ -17356,7 +17366,7 @@ function registerSkill(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001Skill \u5B89\u88C5").version("0.2.1");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001Skill \u5B89\u88C5").version("0.2.2");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

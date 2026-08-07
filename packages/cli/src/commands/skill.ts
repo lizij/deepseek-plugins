@@ -11,8 +11,6 @@ const currentDir = (() => {
   if (typeof __dirname !== 'undefined') return __dirname;
   return dirname(fileURLToPath(import.meta.url));
 })();
-// Skill 源文件在 CLI 构建目录的 ../skill（即 packages/cli/skill/）
-const SKILL_SOURCE_DIR = join(currentDir, '..', 'skill');
 const SKILL_NAME = 'deepseek-plugin-skill';
 // 本地安装目标：当前工作目录下的 .trae/skills/
 const TRAE_SKILL_DIR = join(process.cwd(), '.trae', 'skills', SKILL_NAME);
@@ -28,16 +26,27 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+// Skill 源目录候选：开发构建目录或 release 产物目录，取第一个存在者。
+async function findSkillSourceDir(): Promise<string | null> {
+  const candidates = [
+    join(currentDir, '..', 'skill'), // packages/cli/dist -> packages/cli/skill
+    join(currentDir, 'deepseek-plugin-skill'), // release/ -> release/deepseek-plugin-skill
+  ];
+  for (const dir of candidates) {
+    if (await fileExists(join(dir, 'SKILL.md'))) return dir;
+  }
+  return null;
+}
+
 async function installSkill(targetDir: string) {
-  const sourceExists = await fileExists(join(SKILL_SOURCE_DIR, 'SKILL.md'));
-  if (!sourceExists) {
-    console.error(`✗ 源 Skill 目录不存在或不完整: ${SKILL_SOURCE_DIR}`);
-    console.error('  请先执行 pnpm -r build');
+  const sourceDir = await findSkillSourceDir();
+  if (!sourceDir) {
+    console.error('✗ 未找到源 Skill 目录，请先执行 pnpm -r build');
     process.exit(1);
   }
 
   await mkdir(targetDir, { recursive: true });
-  await cp(SKILL_SOURCE_DIR, targetDir, { recursive: true });
+  await cp(sourceDir, targetDir, { recursive: true });
   console.log(`  ✓ ${SKILL_NAME} -> ${targetDir}`);
 }
 

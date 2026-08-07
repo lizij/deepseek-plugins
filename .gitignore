@@ -7,6 +7,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Test output
+coverage/
+
 # Secrets & credentials — 严禁提交
 .env
 .env.*

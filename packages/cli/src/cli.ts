@@ -9,7 +9,7 @@ const program = new Command();
 program
   .name('deepseek-plugin-cli')
   .description('DeepSeek 插件统一管理工具：API Key 管理、视觉模型测试、余额查询、Skill 安装')
-  .version('0.2.1');
+  .version('0.2.2');
 
 registerAuth(program);
 registerVision(program);
