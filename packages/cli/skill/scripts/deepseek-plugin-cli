@@ -17364,13 +17364,206 @@ function registerSkill(program3) {
   });
 }
 
+// src/commands/completion.ts
+var ZSH_COMPLETION = `# \u7531 deepseek-plugin-cli completion zsh \u751F\u6210
+_deepseek_services() {
+  local -a services
+  services=(
+    'deepseek:DeepSeek \u4E3B API Key'
+    'vision:\u4E3B\u89C6\u89C9\u6A21\u578B API Key'
+    'vision.base_url:\u4E3B\u89C6\u89C9\u6A21\u578B base URL'
+    'vision.model:\u4E3B\u89C6\u89C9\u6A21\u578B\u540D\u79F0'
+  )
+  _describe 'service' services
+}
+
+_deepseek_auth() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+  local -a cmds
+  cmds=(
+    'set:\u8BBE\u7F6E API Key\uFF08\u4EA4\u4E92\u5F0F\u8F93\u5165\uFF09'
+    'get:\u8BFB\u53D6 API Key'
+    'unset:\u5220\u9664 API Key'
+    'list:\u5217\u51FA\u5DF2\u6CE8\u518C\u7684 service'
+  )
+  _arguments -C \\
+    '1:auth \u5B50\u547D\u4EE4:->cmd' \\
+    '*::\u53C2\u6570:->args'
+  case $state in
+    cmd) _describe 'auth \u5B50\u547D\u4EE4' cmds ;;
+    args)
+      case \${words[2]} in
+        set|get|unset) _deepseek_services ;;
+      esac
+      ;;
+  esac
+}
+
+_deepseek_vision_fallback() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+  local -a cmds
+  cmds=(
+    'add:\u6DFB\u52A0\u5907\u9009\u89C6\u89C9\u6A21\u578B'
+    'list:\u5217\u51FA\u6240\u6709\u89C6\u89C9\u6A21\u578B'
+    'remove:\u5220\u9664\u5907\u9009\u89C6\u89C9\u6A21\u578B'
+  )
+  _arguments -C \\
+    '1:fallback \u5B50\u547D\u4EE4:->cmd' \\
+    '*::\u53C2\u6570:->args'
+  case $state in
+    cmd) _describe 'fallback \u5B50\u547D\u4EE4' cmds ;;
+    args)
+      case \${words[3]} in
+        add)
+          _arguments \\
+            '--base-url[API base URL]:URL:' \\
+            '--model[\u6A21\u578B\u540D\u79F0]:\u6A21\u578B:'
+          ;;
+        remove) _message '\u8BF7\u8F93\u5165\u5907\u9009\u6A21\u578B\u7D22\u5F15\uFF08\u4ECE 0 \u5F00\u59CB\uFF09' ;;
+      esac
+      ;;
+  esac
+}
+
+_deepseek_vision() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[\u63D0\u95EE\u5185\u5BB9]:\u63D0\u793A\u8BCD:' \\
+    '(-d --detail)'{-d,--detail}'[\u7EC6\u8282\u7EA7\u522B]:\u7EA7\u522B:(low high)' \\
+    '1:vision \u5B50\u547D\u4EE4\u6216\u56FE\u7247:->cmd' \\
+    '*::\u53C2\u6570:->args'
+  case $state in
+    cmd)
+      _alternative \\
+        'files:\u56FE\u7247\u8DEF\u5F84:_files' \\
+        'commands:vision \u5B50\u547D\u4EE4:(config fallback)'
+      ;;
+    args)
+      case \${words[2]} in
+        config)
+          _arguments \\
+            '--base-url[API base URL]:URL:' \\
+            '--model[\u6A21\u578B\u540D\u79F0]:\u6A21\u578B:'
+          ;;
+        fallback) _deepseek_vision_fallback ;;
+      esac
+      ;;
+  esac
+}
+
+_deepseek_skill() {
+  local -a cmds
+  cmds=(
+    'install:\u5B89\u88C5 Skill'
+    'update:\u66F4\u65B0 Skill'
+  )
+  _describe 'skill \u5B50\u547D\u4EE4' cmds
+}
+
+_deepseek_plugin_cli() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+  local -a subcmds
+  subcmds=(
+    'auth:\u7BA1\u7406 API Key'
+    'vision:\u56FE\u7247\u8BC6\u522B\u4E0E\u89C6\u89C9\u6A21\u578B\u914D\u7F6E'
+    'balance:\u67E5\u8BE2 DeepSeek API \u4F59\u989D'
+    'skill:\u5B89\u88C5\u4E0E\u66F4\u65B0 Skill'
+  )
+  _arguments -C \\
+    '(-h --help)'{-h,--help}'[\u663E\u793A\u5E2E\u52A9\u4FE1\u606F]' \\
+    '(-V --version)'{-V,--version}'[\u663E\u793A\u7248\u672C\u53F7]' \\
+    '1:\u5B50\u547D\u4EE4:->cmd' \\
+    '*::\u53C2\u6570:->args'
+  case $state in
+    cmd) _describe '\u5B50\u547D\u4EE4' subcmds ;;
+    args)
+      case \${words[2]} in
+        auth) _deepseek_auth ;;
+        vision) _deepseek_vision ;;
+        balance) _arguments '--json[\u8F93\u51FA JSON \u683C\u5F0F]' ;;
+        skill) _deepseek_skill ;;
+      esac
+      ;;
+  esac
+}
+
+compdef _deepseek_plugin_cli deepseek-plugin-cli
+`;
+var BASH_COMPLETION = `# \u7531 deepseek-plugin-cli completion bash \u751F\u6210
+_deepseek_plugin_cli_completion() {
+  local cur="\${COMP_WORDS[COMP_CWORD]}"
+  local subcommands="auth vision balance skill"
+  local auth_cmds="set get unset list"
+  local vision_cmds="config fallback"
+  local fallback_cmds="add list remove"
+  local skill_cmds="install update"
+  local services="deepseek vision vision.base_url vision.model"
+
+  case "$COMP_CWORD" in
+    1) COMPREPLY=( $(compgen -W "$subcommands --help --version" -- "$cur") ) ;;
+    2)
+      case "\${COMP_WORDS[1]}" in
+        auth) COMPREPLY=( $(compgen -W "$auth_cmds" -- "$cur") ) ;;
+        vision) COMPREPLY=( $(compgen -W "$vision_cmds -p -d" -- "$cur") ) ;;
+        skill) COMPREPLY=( $(compgen -W "$skill_cmds" -- "$cur") ) ;;
+      esac
+      ;;
+    3)
+      case "\${COMP_WORDS[1]}" in
+        auth)
+          case "\${COMP_WORDS[2]}" in
+            set|get|unset) COMPREPLY=( $(compgen -W "$services" -- "$cur") ) ;;
+          esac
+          ;;
+        vision)
+          case "\${COMP_WORDS[2]}" in
+            config) COMPREPLY=( $(compgen -W "--base-url --model" -- "$cur") ) ;;
+            fallback) COMPREPLY=( $(compgen -W "$fallback_cmds" -- "$cur") ) ;;
+          esac
+          ;;
+      esac
+      ;;
+    4)
+      case "\${COMP_WORDS[1]} \${COMP_WORDS[2]}" in
+        "vision fallback")
+          case "\${COMP_WORDS[3]}" in
+            add) COMPREPLY=( $(compgen -W "--base-url --model" -- "$cur") ) ;;
+          esac
+          ;;
+      esac
+      ;;
+  esac
+}
+
+complete -F _deepseek_plugin_cli_completion deepseek-plugin-cli
+`;
+function registerCompletion(program3) {
+  program3.command("completion").description("\u751F\u6210 shell \u8865\u5168\u811A\u672C\uFF08source <(deepseek-plugin-cli completion zsh) \u542F\u7528\uFF09").argument("[shell]", "\u76EE\u6807 shell\uFF08zsh | bash\uFF09", "zsh").action((shell) => {
+    if (shell === "zsh") {
+      console.log(ZSH_COMPLETION);
+      return;
+    }
+    if (shell === "bash") {
+      console.log(BASH_COMPLETION);
+      return;
+    }
+    console.error(`\u2717 \u4E0D\u652F\u6301\u7684 shell: ${shell}\uFF08\u652F\u6301 zsh | bash\uFF09`);
+    process.exit(1);
+  });
+}
+
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001Skill \u5B89\u88C5").version("0.2.2");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001Skill \u5B89\u88C5").version("0.3.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);
 registerSkill(program2);
+registerCompletion(program2);
 program2.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);

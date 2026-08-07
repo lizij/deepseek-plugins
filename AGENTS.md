@@ -50,15 +50,33 @@ pnpm -r build
 ### 将 CLI 加入 PATH
 
 ```bash
-# 临时（当前终端会话）
-export PATH="$PWD/packages/cli/dist:$PATH"
+# 临时（当前终端会话，使用 release/ 发布产物）
+source scripts/env.sh
 
-# 永久（写入 shell profile）
-echo 'export PATH="$HOME/Projects/deepseek-plugins/packages/cli/dist:$PATH"' >> ~/.zshrc
+# 永久（写入 shell profile，固定指向 release/ 发布产物）
+bash scripts/install.sh --path-only
 
-# 或使用一键安装脚本（软链到 /usr/local/bin）
+# 或使用一键安装脚本（软链到 /usr/local/bin，需 root 权限）
 bash scripts/install.sh
+
+# 或安装到用户目录 ~/.local/bin（无需 root 权限）
+bash scripts/install.sh --user
 ```
+
+编译完成后，`release/` 目录下会生成 `deepseek-plugin-cli` 可执行单文件、`deepseek-plugin-skill/` 与 `deepseek-plugin-skill.zip`。
+
+### 启用 shell 补全
+
+CLI 内置 `completion` 子命令，无需安装额外文件。将以下一行加入 `~/.zshrc`（zsh）或 `~/.bashrc`（bash）后重新加载终端：
+
+```bash
+# zsh
+source <(deepseek-plugin-cli completion zsh)
+
+# bash
+source <(deepseek-plugin-cli completion bash)
+```
+
 
 ### 配置 API Key
 
@@ -121,6 +139,7 @@ deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
 deepseek-plugin-cli balance [--json]        # 查询余额
 deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
+deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本
 ```
 
 ### 接入 Agent
