@@ -1,15 +1,22 @@
 import { Command } from 'commander';
-import { cp, access } from 'node:fs/promises';
+import { cp, access, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { constants } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..');
+// 兼容 CJS 和 ESM 的 __dirname
+const currentDir = (() => {
+  // @ts-ignore CJS global
+  if (typeof __dirname !== 'undefined') return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
+})();
+const PROJECT_ROOT = join(currentDir, '..', '..', '..');
 const SKILL_SOURCE_DIR = join(PROJECT_ROOT, 'packages', 'cli', 'skill');
 const SKILL_NAME = 'deepseek-plugin-skill';
 const TRAE_SKILL_DIR = join(PROJECT_ROOT, '.trae', 'skills', SKILL_NAME);
 const TRAE_SKILL_FILE = join(TRAE_SKILL_DIR, 'SKILL.md');
+const GLOBAL_SKILL_DIR = join(homedir(), '.agents', 'skills', SKILL_NAME);
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -28,6 +35,7 @@ async function installSkill(targetDir: string) {
     process.exit(1);
   }
 
+  await mkdir(targetDir, { recursive: true });
   await cp(SKILL_SOURCE_DIR, targetDir, { recursive: true });
   console.log(`  ✓ ${SKILL_NAME} -> ${targetDir}`);
 }
@@ -39,14 +47,20 @@ export function registerSkill(program: Command) {
 
   skill
     .command('install')
-    .description('安装 deepseek-plugin-skill 到当前项目')
+    .description('安装 deepseek-plugin-skill')
     .option('--agent <agent>', '目标 Agent 类型 (trae/claude/all)', 'trae')
+    .option('--global', '安装到全局 ~/.agents/skills/')
     .action(async (opts) => {
       console.log('==> 安装 Skill...');
 
-      if (opts.agent === 'trae' || opts.agent === 'all') {
-        console.log('[TRAE]');
-        await installSkill(TRAE_SKILL_DIR);
+      if (opts.global) {
+        console.log('[全局安装]');
+        await installSkill(GLOBAL_SKILL_DIR);
+      } else {
+        if (opts.agent === 'trae' || opts.agent === 'all') {
+          console.log('[TRAE]');
+          await installSkill(TRAE_SKILL_DIR);
+        }
       }
 
       if (opts.agent === 'claude' || opts.agent === 'all') {

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Command } from 'commander';
 import { registerAuth } from './commands/auth.js';
 import { registerVision } from './commands/vision.js';

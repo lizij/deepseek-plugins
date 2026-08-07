@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 const CLI = resolve(__dirname, '..', 'dist', 'deepseek-plugin-cli');
 
 function run(args: string): string {
-  return execSync(`node ${CLI} ${args}`, {
+  return execSync(`${CLI} ${args}`, {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -13,7 +13,7 @@ function run(args: string): string {
 
 function runOrError(args: string): { stdout: string; stderr: string; status: number } {
   try {
-    const stdout = execSync(`node ${CLI} ${args}`, {
+    const stdout = execSync(`${CLI} ${args}`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
