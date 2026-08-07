@@ -1,6 +1,6 @@
 ---
 name: deepseek-plugin-skill
-description: >-
+description: |
   当用户需要识别图片、分析图像内容、查询 DeepSeek API 余额或配置视觉模型时使用此 skill。
   为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图与余额查询能力。
   通过 scripts/deepseek-plugin-cli 调用视觉模型分析图片，查询 DeepSeek API 账户余额。
@@ -8,7 +8,7 @@ description: >-
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # DeepSeek Plugin Skill
