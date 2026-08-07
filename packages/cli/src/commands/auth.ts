@@ -5,7 +5,7 @@ import { setKey, getKey, unsetKey, listServices } from '@deepseek-plugins/shared
 export function registerAuth(program: Command) {
   const auth = program
     .command('auth')
-    .description('API Key 管理（macOS Keychain 安全存储）');
+    .description('API Key 管理（加密本地文件存储）');
 
   auth
     .command('set <service>')
@@ -16,7 +16,7 @@ export function registerAuth(program: Command) {
         mask: true,
       });
       await setKey(service, key);
-      console.log(`✓ 已保存到 Keychain (service: ${service})`);
+      console.log(`✓ 已保存 (service: ${service})`);
     });
 
   auth
@@ -36,7 +36,7 @@ export function registerAuth(program: Command) {
     .description('删除 API Key')
     .action(async (service: string) => {
       await unsetKey(service);
-      console.log(`✓ 已从 Keychain 删除 (service: ${service})`);
+      console.log(`✓ 已删除 (service: ${service})`);
     });
 
   auth

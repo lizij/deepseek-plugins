@@ -1,14 +1,5 @@
 import { Command } from 'commander';
-import { fetchBalance } from '@deepseek-plugins/balance-menubar';
-
-function formatBalance(s: string, currency: string): string {
-  const n = parseFloat(s);
-  const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : '';
-  if (isNaN(n)) return `${symbol}${s}`;
-  if (n >= 1000) return `${symbol}${n.toFixed(0)}`;
-  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
-  return `${symbol}${n.toFixed(2)}`;
-}
+import { fetchBalance, formatBalance } from '@deepseek-plugins/balance-menubar';
 
 export function registerBalance(program: Command) {
   program

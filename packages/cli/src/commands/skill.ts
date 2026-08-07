@@ -11,10 +11,11 @@ const currentDir = (() => {
   if (typeof __dirname !== 'undefined') return __dirname;
   return dirname(fileURLToPath(import.meta.url));
 })();
-const PROJECT_ROOT = join(currentDir, '..', '..', '..');
-const SKILL_SOURCE_DIR = join(PROJECT_ROOT, 'packages', 'cli', 'skill');
+// Skill 源文件在 CLI 构建目录的 ../skill（即 packages/cli/skill/）
+const SKILL_SOURCE_DIR = join(currentDir, '..', 'skill');
 const SKILL_NAME = 'deepseek-plugin-skill';
-const TRAE_SKILL_DIR = join(PROJECT_ROOT, '.trae', 'skills', SKILL_NAME);
+// 本地安装目标：当前工作目录下的 .trae/skills/
+const TRAE_SKILL_DIR = join(process.cwd(), '.trae', 'skills', SKILL_NAME);
 const TRAE_SKILL_FILE = join(TRAE_SKILL_DIR, 'SKILL.md');
 const GLOBAL_SKILL_DIR = join(homedir(), '.agents', 'skills', SKILL_NAME);
 

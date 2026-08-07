@@ -24,6 +24,16 @@ interface ApiResponse {
   }>;
 }
 
+/** 格式化余额数值，自动选择合适的精度。 */
+export function formatBalance(s: string, currency: string): string {
+  const n = parseFloat(s);
+  const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : '';
+  if (isNaN(n)) return `${symbol}${s}`;
+  if (n >= 1000) return `${symbol}${n.toFixed(0)}`;
+  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
+  return `${symbol}${n.toFixed(2)}`;
+}
+
 /** 获取 DeepSeek 账户余额，失败返回 null。 */
 export async function fetchBalance(): Promise<{ result: BalanceResult | null; error?: string }> {
   try {

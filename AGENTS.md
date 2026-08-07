@@ -38,7 +38,6 @@ deepseek-plugins/
 |------|-----------|------|
 | Node.js | ≥ 20 | 运行时 |
 | pnpm | 最新稳定版 | 包管理 |
-| macOS Keychain | 系统内置 | API Key 安全存储 |
 | SwiftBar | 可选 | 余额状态栏展示（仅 balance-menubar 需要） |
 
 ### 安装与构建
@@ -72,10 +71,10 @@ deepseek-plugin-cli auth set deepseek
 #### 视觉模型 API Key 与配置（识图用）
 
 ```bash
-# 设置 API Key（交互式输入，存入 Keychain）
+# 设置 API Key（交互式输入，加密存储）
 deepseek-plugin-cli auth set vision
 
-# 配置 base_url 与 model（存入 Keychain）
+# 配置 base_url 与 model
 deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o
 ```
 
@@ -128,19 +127,19 @@ deepseek-plugin-cli skill update            # 更新 Skill
 
 #### TRAE
 
-确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 存入 Keychain。Skill 已配置在 `.trae/skills/deepseek-plugin-skill/SKILL.md`。
+确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 完成。Skill 已配置在 `.trae/skills/deepseek-plugin-skill/SKILL.md`。
 
 #### Claude Code
 
-确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 存入 Keychain。
+确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 完成。
 
 #### 其他 Agent
 
 只要 agent 支持执行 shell 命令，即可通过 `deepseek-plugin-cli vision` 调用识图能力。只需确保：
 
 1. `deepseek-plugin-cli` 在 PATH 中
-2. 视觉模型配置已通过 `deepseek-plugin-cli vision config` 存入 Keychain
-3. API Key 已通过 `deepseek-plugin-cli auth set vision` 存入 Keychain
+2. 视觉模型配置已通过 `deepseek-plugin-cli vision config` 完成
+3. API Key 已通过 `deepseek-plugin-cli auth set vision` 完成
 
 ## 部署说明
 
@@ -176,7 +175,7 @@ DeepSeek API Key 及任何第三方视觉模型 Key 属于敏感凭据，**绝�
 3. 出现在进程命令行参数（`ps` 可见）或 shell history。
 4. 落盘为明文文件（如 `.env`、`config.json`）。
 
-**唯一允许的存储方式**：macOS Keychain，通过 `deepseek-plugin-cli auth` 子命令管理：
+**唯一允许的存储方式**：通过 `deepseek-plugin-cli auth` 子命令管理，凭据加密存储于 `~/.deepseek-plugins/credentials.enc`（AES-256-GCM 加密，密钥由机器指纹派生）：
 
 ```bash
 deepseek-plugin-cli auth set <service>     # 交互式输入（隐藏回显）

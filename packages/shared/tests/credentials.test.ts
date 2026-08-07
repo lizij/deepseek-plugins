@@ -1,45 +1,75 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { execSync } from 'node:child_process';
 import { setKey, getKey, unsetKey, listServices } from '../src/credentials.js';
 
-vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+// 内存文件系统模拟
+let fsStore: Record<string, Buffer> = {};
+let dirs: Set<string> = new Set();
+
+vi.mock('node:fs', () => ({
+  readFileSync: vi.fn((path: string) => {
+    if (path in fsStore) return fsStore[path];
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
+  writeFileSync: vi.fn((path: string, data: Buffer) => {
+    fsStore[path] = data;
+  }),
+  existsSync: vi.fn((path: string) => {
+    return path in fsStore || dirs.has(path);
+  }),
+  mkdirSync: vi.fn((path: string) => {
+    dirs.add(path);
+  }),
+  unlinkSync: vi.fn((path: string) => {
+    delete fsStore[path];
+  }),
+}));
+
+vi.mock('node:os', () => ({
+  homedir: () => '/home/test',
+  hostname: () => 'test-machine',
+  userInfo: () => ({ username: 'testuser' }),
+  platform: () => 'darwin',
+  arch: () => 'arm64',
 }));
 
 describe('credentials', () => {
   beforeEach(() => {
+    fsStore = {};
+    dirs = new Set();
     vi.clearAllMocks();
   });
 
   describe('setKey', () => {
-    it('正常写入 Keychain', async () => {
-      vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+    it('正常写入凭据', async () => {
       await expect(setKey('test-svc', 'test-key')).resolves.toBeUndefined();
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining("security add-generic-password"),
-        expect.any(Object),
-      );
+      // 写入后应能读取
+      const key = await getKey('test-svc');
+      expect(key).toBe('test-key');
     });
 
-    it('security 命令失败时抛出明确错误', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('security error');
-      });
-      await expect(setKey('test-svc', 'test-key')).rejects.toThrow('Keychain 写入失败');
+    it('覆盖已有凭据', async () => {
+      await setKey('test-svc', 'old-key');
+      await setKey('test-svc', 'new-key');
+      const key = await getKey('test-svc');
+      expect(key).toBe('new-key');
+    });
+
+    it('多个 service 并存', async () => {
+      await setKey('svc1', 'k1');
+      await setKey('svc2', 'k2');
+      expect(await getKey('svc1')).toBe('k1');
+      expect(await getKey('svc2')).toBe('k2');
     });
   });
 
   describe('getKey', () => {
     it('正常读取', async () => {
-      vi.mocked(execSync).mockReturnValue(Buffer.from('test-key\n'));
+      await setKey('test-svc', 'test-key');
       const result = await getKey('test-svc');
       expect(result).toBe('test-key');
     });
 
     it('不存在时返回 null', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('not found');
-      });
       const result = await getKey('nonexistent');
       expect(result).toBeNull();
     });
@@ -47,55 +77,44 @@ describe('credentials', () => {
 
   describe('unsetKey', () => {
     it('正常删除', async () => {
-      vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+      await setKey('test-svc', 'test-key');
       await expect(unsetKey('test-svc')).resolves.toBeUndefined();
+      expect(await getKey('test-svc')).toBeNull();
     });
 
-    it('条目不存在时静默返回', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('The specified item could not be found');
-      });
-      await expect(unsetKey('test-svc')).resolves.toBeUndefined();
+    it('不存在时静默返回', async () => {
+      await expect(unsetKey('nonexistent')).resolves.toBeUndefined();
     });
 
-    it('其他异常时抛出明确错误', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('permission denied');
-      });
-      await expect(unsetKey('test-svc')).rejects.toThrow('Keychain 删除失败');
+    it('删除最后一条凭据后文件被清理', async () => {
+      const { unlinkSync } = await import('node:fs');
+      await setKey('test-svc', 'test-key');
+      await unsetKey('test-svc');
+      expect(unlinkSync).toHaveBeenCalled();
     });
   });
 
   describe('listServices', () => {
     it('返回已注册的 service 列表', async () => {
-      vi.mocked(execSync).mockReturnValue(
-        Buffer.from('keychain: "/Users/test/Library/Keychains/login.keychain-db"\n' +
-          'class: "genp"\n' +
-          'attributes:\n' +
-          '    0x00000007 <blob>="deepseek"\n' +
-          '    "acct"<blob>="deepseek"\n' +
-          '    "svce"<blob>="deepseek-plugins"\n' +
-          'class: "genp"\n' +
-          'attributes:\n' +
-          '    "acct"<blob>="vision"\n' +
-          '    "svce"<blob>="deepseek-plugins"'),
-      );
+      await setKey('deepseek', 'k1');
+      await setKey('vision', 'k2');
       const services = await listServices();
-      expect(services).toEqual(['deepseek', 'vision']);
+      expect(services.sort()).toEqual(['deepseek', 'vision']);
     });
 
     it('无凭据时返回空数组', async () => {
-      vi.mocked(execSync).mockReturnValue(Buffer.from(''));
       const services = await listServices();
       expect(services).toEqual([]);
     });
+  });
 
-    it('security 命令失败时返回空数组', async () => {
-      vi.mocked(execSync).mockImplementation(() => {
-        throw new Error('security error');
-      });
-      const services = await listServices();
-      expect(services).toEqual([]);
+  describe('加密安全性', () => {
+    it('凭据文件不包含明文 key', async () => {
+      const { writeFileSync } = await import('node:fs');
+      await setKey('test-svc', 'secret-api-key');
+      const writeCall = vi.mocked(writeFileSync).mock.calls[0];
+      const data = writeCall[1] as Buffer;
+      expect(data.toString()).not.toContain('secret-api-key');
     });
   });
 });

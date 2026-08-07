@@ -40,7 +40,7 @@ export function registerVision(program: Command) {
   // vision config — 配置主模型
   vision
     .command('config')
-    .description('配置主视觉模型 base_url 和 model（存入 Keychain）')
+    .description('配置主视觉模型 base_url 和 model')
     .option('-u, --base-url <url>', '视觉模型 API base URL（OpenAI 兼容）')
     .option('-m, --model <name>', '视觉模型名称')
     .action(async (opts) => {

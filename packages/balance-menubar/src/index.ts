@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { fetchBalance } from './balance.js';
+import { fetchBalance, formatBalance } from './balance.js';
 
 const { result, error } = await fetchBalance();
 
@@ -60,13 +60,4 @@ function printLine(text: string, opts?: { color?: string }) {
 
 function printSeparator() {
   process.stdout.write('---\n');
-}
-
-function formatBalance(s: string, currency: string): string {
-  const n = parseFloat(s);
-  const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : '';
-  if (isNaN(n)) return `${symbol}${s}`;
-  if (n >= 1000) return `${symbol}${n.toFixed(0)}`;
-  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
-  return `${symbol}${n.toFixed(2)}`;
 }

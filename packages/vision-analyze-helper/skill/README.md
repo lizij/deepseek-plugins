@@ -6,10 +6,10 @@
 # 1. 构建
 pnpm install && pnpm -r build
 
-# 2. 配置视觉模型 Key（交互式输入，存入 macOS Keychain）
+# 2. 配置视觉模型 Key（交互式输入，加密存储）
 deepseek-plugin-cli auth set vision
 
-# 3. 配置 base_url 与 model（存入 Keychain）
+# 3. 配置 base_url 与 model
 deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o
 
 # 4. 加入 PATH
@@ -50,7 +50,7 @@ Skill 已配置在 `.trae/skills/vision-analyze-helper/SKILL.md`，TRAE 启动�
 
 ## 配置管理
 
-所有视觉模型配置均通过 CLI 存入 macOS Keychain，无需设置环境变量：
+所有视觉模型配置均通过 CLI 加密存储，无需设置环境变量：
 
 | 配置项 | CLI 命令 |
 |--------|----------|
@@ -60,5 +60,5 @@ Skill 已配置在 `.trae/skills/vision-analyze-helper/SKILL.md`，TRAE 启动�
 
 ## 安全
 
-- API Key / 配置仅存 macOS Keychain，不落盘、不入 git、不进日志
+- API Key / 配置加密存储于本地文件，不落盘明文、不入 git、不进日志
 - 通过 `deepseek-plugin-cli auth` 和 `deepseek-plugin-cli vision config` 命令管理，禁止手工设置环境变量

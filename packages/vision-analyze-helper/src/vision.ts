@@ -52,10 +52,7 @@ export async function analyzeImage(
   }).finally(() => clearTimeout(timer));
 
   if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(
-      `视觉模型请求失败 (HTTP ${resp.status}): ${body.slice(0, 500)}`,
-    );
+    throw new Error(`视觉模型请求失败 (HTTP ${resp.status})`);
   }
 
   const data = (await resp.json()) as {

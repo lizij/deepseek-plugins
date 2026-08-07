@@ -16891,79 +16891,88 @@ var esm_default11 = createPrompt((config, done) => {
   return `${lines}${cursorHide}`;
 });
 
-// ../shared/dist/chunk-IB4GZ75P.js
-var import_child_process2 = require("child_process");
-var KEYCHAIN_SERVICE = "deepseek-plugins";
-async function setKey(service, key) {
+// ../shared/dist/credentials.js
+var import_crypto = require("crypto");
+var import_fs2 = require("fs");
+var import_path = require("path");
+var import_os = require("os");
+var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".deepseek-plugins");
+var CREDENTIALS_FILE = (0, import_path.join)(CONFIG_DIR, "credentials.enc");
+function getMachineFingerprint() {
+  return `${(0, import_os.hostname)()}:${(0, import_os.userInfo)().username}:${(0, import_os.platform)()}:${(0, import_os.arch)()}`;
+}
+function deriveKey(salt) {
+  return (0, import_crypto.pbkdf2Sync)(getMachineFingerprint(), salt, 1e5, 32, "sha256");
+}
+function readCredentials() {
+  if (!(0, import_fs2.existsSync)(CREDENTIALS_FILE)) return {};
+  const data = (0, import_fs2.readFileSync)(CREDENTIALS_FILE);
+  if (data.length < 44) return {};
+  const salt = data.subarray(0, 16);
+  const iv = data.subarray(16, 28);
+  const authTag = data.subarray(28, 44);
+  const encrypted = data.subarray(44);
   try {
-    (0, import_child_process2.execSync)(
-      `security add-generic-password -a '${escapeArg(service)}' -s '${escapeArg(KEYCHAIN_SERVICE)}' -w '${escapeArg(key)}' -U`,
-      { stdio: "pipe" }
-    );
-  } catch (err) {
-    throw new Error(
-      `Keychain \u5199\u5165\u5931\u8D25 (service: ${service}): ${err instanceof Error ? err.message : String(err)}`
-    );
+    const key = deriveKey(salt);
+    const decipher = (0, import_crypto.createDecipheriv)("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return JSON.parse(decrypted.toString("utf-8"));
+  } catch {
+    return {};
   }
+}
+function writeCredentials(creds) {
+  if (!(0, import_fs2.existsSync)(CONFIG_DIR)) {
+    (0, import_fs2.mkdirSync)(CONFIG_DIR, { recursive: true, mode: 448 });
+  }
+  const salt = (0, import_crypto.randomBytes)(16);
+  const iv = (0, import_crypto.randomBytes)(12);
+  const key = deriveKey(salt);
+  const cipher = (0, import_crypto.createCipheriv)("aes-256-gcm", key, iv);
+  const plaintext = JSON.stringify(creds);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  const output = Buffer.concat([salt, iv, authTag, encrypted]);
+  (0, import_fs2.writeFileSync)(CREDENTIALS_FILE, output, { mode: 384 });
+}
+async function setKey(service, key) {
+  const creds = readCredentials();
+  creds[service] = key;
+  writeCredentials(creds);
 }
 async function getKey(service) {
-  try {
-    const out = (0, import_child_process2.execSync)(
-      `security find-generic-password -a '${escapeArg(service)}' -s '${escapeArg(KEYCHAIN_SERVICE)}' -w`,
-      { stdio: "pipe" }
-    );
-    return out.toString().trim() || null;
-  } catch {
-    return null;
-  }
+  const creds = readCredentials();
+  return creds[service] ?? null;
 }
 async function unsetKey(service) {
-  try {
-    (0, import_child_process2.execSync)(
-      `security delete-generic-password -a '${escapeArg(service)}' -s '${escapeArg(KEYCHAIN_SERVICE)}'`,
-      { stdio: "pipe" }
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes("not found") && !msg.includes("The specified item could not be found")) {
-      throw new Error(
-        `Keychain \u5220\u9664\u5931\u8D25 (service: ${service}): ${msg}`
-      );
+  const creds = readCredentials();
+  if (service in creds) {
+    delete creds[service];
+    if (Object.keys(creds).length === 0) {
+      try {
+        (0, import_fs2.unlinkSync)(CREDENTIALS_FILE);
+      } catch {
+      }
+    } else {
+      writeCredentials(creds);
     }
   }
 }
 async function listServices() {
-  try {
-    const out = (0, import_child_process2.execSync)(
-      `security find-generic-password -s '${escapeArg(KEYCHAIN_SERVICE)}' 2>&1 || true`,
-      { stdio: "pipe" }
-    );
-    const text = out.toString();
-    const accounts = [];
-    const re = /"acct"<blob>="([^"]+)"/g;
-    let match;
-    while ((match = re.exec(text)) !== null) {
-      if (match[1]) accounts.push(match[1]);
-    }
-    return accounts;
-  } catch {
-    return [];
-  }
-}
-function escapeArg(s) {
-  return s.replace(/'/g, "'\\''");
+  return Object.keys(readCredentials());
 }
 
 // src/commands/auth.ts
 function registerAuth(program3) {
-  const auth = program3.command("auth").description("API Key \u7BA1\u7406\uFF08macOS Keychain \u5B89\u5168\u5B58\u50A8\uFF09");
+  const auth = program3.command("auth").description("API Key \u7BA1\u7406\uFF08\u52A0\u5BC6\u672C\u5730\u6587\u4EF6\u5B58\u50A8\uFF09");
   auth.command("set <service>").description("\u4EA4\u4E92\u5F0F\u8BBE\u7F6E API Key\uFF08\u9690\u85CF\u56DE\u663E\uFF09").action(async (service) => {
     const key = await esm_default9({
       message: `\u8F93\u5165 ${service} \u7684 API Key:`,
       mask: true
     });
     await setKey(service, key);
-    console.log(`\u2713 \u5DF2\u4FDD\u5B58\u5230 Keychain (service: ${service})`);
+    console.log(`\u2713 \u5DF2\u4FDD\u5B58 (service: ${service})`);
   });
   auth.command("get <service>").description("\u8BFB\u53D6 API Key\uFF08\u8F93\u51FA\u5230 stdout\uFF0C\u8C28\u614E\u4F7F\u7528\uFF09").action(async (service) => {
     const key = await getKey(service);
@@ -16975,7 +16984,7 @@ function registerAuth(program3) {
   });
   auth.command("unset <service>").description("\u5220\u9664 API Key").action(async (service) => {
     await unsetKey(service);
-    console.log(`\u2713 \u5DF2\u4ECE Keychain \u5220\u9664 (service: ${service})`);
+    console.log(`\u2713 \u5DF2\u5220\u9664 (service: ${service})`);
   });
   auth.command("list").description("\u5217\u51FA\u5DF2\u6CE8\u518C\u7684 service \u540D\uFF08\u4E0D\u663E\u793A Key \u503C\uFF09").action(async () => {
     const services = await listServices();
@@ -16987,7 +16996,7 @@ function registerAuth(program3) {
   });
 }
 
-// ../vision-analyze-helper/dist/chunk-AHEOPMA4.js
+// ../vision-analyze-helper/dist/chunk-AF6HSVBZ.js
 async function loadConfig() {
   const baseUrl = await getKey("vision.base_url");
   const model = await getKey("vision.model");
@@ -17017,7 +17026,7 @@ async function getFallbackCount() {
 function missingConfigHint() {
   return [
     "\u89C6\u89C9\u6A21\u578B\u672A\u914D\u7F6E\uFF0C\u8BF7\u6309\u4EE5\u4E0B\u6B65\u9AA4\u8BBE\u7F6E\uFF1A",
-    "1. \u8BBE\u7F6E API Key\uFF08\u4EA4\u4E92\u5F0F\u8F93\u5165\uFF0C\u5B58\u5165 Keychain\uFF09\uFF1A",
+    "1. \u8BBE\u7F6E API Key\uFF08\u4EA4\u4E92\u5F0F\u8F93\u5165\uFF09\uFF1A",
     "   deepseek-plugin-cli auth set vision",
     "2. \u914D\u7F6E base_url \u4E0E model\uFF1A",
     "   deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o"
@@ -17026,7 +17035,7 @@ function missingConfigHint() {
 
 // ../vision-analyze-helper/dist/chunk-3ODJP5R2.js
 var import_promises = require("fs/promises");
-var import_path = require("path");
+var import_path2 = require("path");
 var MIME_BY_EXT = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -17036,7 +17045,7 @@ var MIME_BY_EXT = {
   ".bmp": "image/bmp"
 };
 function guessMime(filePath) {
-  const ext = (0, import_path.extname)(filePath).toLowerCase();
+  const ext = (0, import_path2.extname)(filePath).toLowerCase();
   const mime = MIME_BY_EXT[ext];
   if (!mime) {
     throw new Error(`\u4E0D\u652F\u6301\u7684\u56FE\u7247\u683C\u5F0F: ${ext}`);
@@ -17052,7 +17061,7 @@ async function normalizeImage(input) {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// ../vision-analyze-helper/dist/chunk-EOR265FT.js
+// ../vision-analyze-helper/dist/chunk-TR2SYGC2.js
 var FETCH_TIMEOUT_MS = 12e4;
 async function analyzeImage(config, params) {
   const imageUri = await normalizeImage(params.image);
@@ -17086,10 +17095,7 @@ async function analyzeImage(config, params) {
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
   if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(
-      `\u89C6\u89C9\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status}): ${body.slice(0, 500)}`
-    );
+    throw new Error(`\u89C6\u89C9\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})`);
   }
   const data = await resp.json();
   const text = data.choices?.[0]?.message?.content;
@@ -17141,7 +17147,7 @@ function registerVision(program3) {
       process.exit(1);
     }
   });
-  vision.command("config").description("\u914D\u7F6E\u4E3B\u89C6\u89C9\u6A21\u578B base_url \u548C model\uFF08\u5B58\u5165 Keychain\uFF09").option("-u, --base-url <url>", "\u89C6\u89C9\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").option("-m, --model <name>", "\u89C6\u89C9\u6A21\u578B\u540D\u79F0").action(async (opts) => {
+  vision.command("config").description("\u914D\u7F6E\u4E3B\u89C6\u89C9\u6A21\u578B base_url \u548C model").option("-u, --base-url <url>", "\u89C6\u89C9\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").option("-m, --model <name>", "\u89C6\u89C9\u6A21\u578B\u540D\u79F0").action(async (opts) => {
     if (!opts.baseUrl && !opts.model) {
       console.error("\u8BF7\u63D0\u4F9B --base-url \u6216 --model");
       console.error("\u793A\u4F8B: deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o");
@@ -17197,8 +17203,16 @@ function registerVision(program3) {
   });
 }
 
-// ../balance-menubar/dist/chunk-GPK2AMKC.js
+// ../balance-menubar/dist/chunk-ONRO2YB5.js
 var BALANCE_URL = "https://api.deepseek.com/user/balance";
+function formatBalance(s, currency) {
+  const n = parseFloat(s);
+  const symbol = currency === "CNY" ? "\xA5" : currency === "USD" ? "$" : "";
+  if (isNaN(n)) return `${symbol}${s}`;
+  if (n >= 1e3) return `${symbol}${n.toFixed(0)}`;
+  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
+  return `${symbol}${n.toFixed(2)}`;
+}
 async function fetchBalance() {
   try {
     const apiKey = await getKey("deepseek");
@@ -17232,14 +17246,6 @@ async function fetchBalance() {
 }
 
 // src/commands/balance.ts
-function formatBalance(s, currency) {
-  const n = parseFloat(s);
-  const symbol = currency === "CNY" ? "\xA5" : currency === "USD" ? "$" : "";
-  if (isNaN(n)) return `${symbol}${s}`;
-  if (n >= 1e3) return `${symbol}${n.toFixed(0)}`;
-  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
-  return `${symbol}${n.toFixed(2)}`;
-}
 function registerBalance(program3) {
   program3.command("balance").description("\u67E5\u8BE2 DeepSeek API \u8D26\u6237\u4F59\u989D").option("--json", "\u4EE5 JSON \u683C\u5F0F\u8F93\u51FA").action(async (opts) => {
     const { result, error } = await fetchBalance();
@@ -17279,10 +17285,9 @@ var currentDir = (() => {
   if (typeof __dirname !== "undefined") return __dirname;
   return (0, import_node_path2.dirname)((0, import_node_url.fileURLToPath)(import_meta.url));
 })();
-var PROJECT_ROOT = (0, import_node_path2.join)(currentDir, "..", "..", "..");
-var SKILL_SOURCE_DIR = (0, import_node_path2.join)(PROJECT_ROOT, "packages", "cli", "skill");
+var SKILL_SOURCE_DIR = (0, import_node_path2.join)(currentDir, "..", "skill");
 var SKILL_NAME = "deepseek-plugin-skill";
-var TRAE_SKILL_DIR = (0, import_node_path2.join)(PROJECT_ROOT, ".trae", "skills", SKILL_NAME);
+var TRAE_SKILL_DIR = (0, import_node_path2.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
 var TRAE_SKILL_FILE = (0, import_node_path2.join)(TRAE_SKILL_DIR, "SKILL.md");
 var GLOBAL_SKILL_DIR = (0, import_node_path2.join)((0, import_node_os2.homedir)(), ".agents", "skills", SKILL_NAME);
 async function fileExists(path2) {
