@@ -17565,6 +17565,11 @@ var import_node_fs2 = require("fs");
 var import_node_path3 = require("path");
 var import_node_url2 = require("url");
 var import_node_os3 = require("os");
+
+// ../menubar/macos/DeepSeekMenuBarApp.swift
+var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        // \u5B9A\u65F6\u5237\u65B0\uFF08\u6BCF 10 \u5206\u949F\uFF09\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        // \u9996\u6B21\u5237\u65B0\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\n    func fetchBalance() {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "balance", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                statusColor = .gray\n                return\n            }\n\n            let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n            if let main = result.balances.first {\n                balanceText = "\u603B\u989D: \\(formatBalance(main.totalBalance, currency: main.currency))"\n            } else {\n                balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n            }\n            statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n            statusColor = result.isAvailable ? .green : .red\n        } catch {\n            balanceText = "\u67E5\u8BE2\u5931\u8D25"\n            statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n            statusColor = .gray\n        }\n    }\n\n    /// \u683C\u5F0F\u5316\u4F59\u989D\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n/// \u7528\u6CD5\uFF1ADeepSeekMenuBar [cli_path]\n/// cli_path \u53EF\u9009\uFF0C\u6307\u5B9A deepseek-plugin-cli \u7684\u8DEF\u5F84\uFF0C\u9ED8\u8BA4\u4ECE PATH \u67E5\u627E\n@main\nstruct DeepSeekMenuBarApp: App {\n    /// deepseek-plugin-cli \u8DEF\u5F84\n    let cliPath: String = {\n        let args = CommandLine.arguments\n        if args.count > 1 {\n            return args[1]\n        }\n        return "deepseek-plugin-cli"\n    }()\n\n    @StateObject private var manager: BalanceManager\n\n    init() {\n        _manager = StateObject(wrappedValue: BalanceManager(cliPath: {\n            let args = CommandLine.arguments\n            return args.count > 1 ? args[1] : "deepseek-plugin-cli"\n        }()))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u7B2C1\u9879\uFF1A\u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(manager.balanceText)\n            }\n\n            // \u7B2C2\u9879\uFF1A\u53EF\u7528\u72B6\u6001\n            Text(manager.statusText)\n                .foregroundStyle(manager.statusColor)\n\n            Divider()\n\n            // \u7B2C3\u9879\uFF1A\u5237\u65B0\n            Button {\n                manager.fetchBalance()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u7B2C4\u9879\uFF1A\u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
+
+// src/commands/menubar.ts
 var import_meta2 = {};
 var currentDir2 = (() => {
   if (typeof __dirname !== "undefined") return __dirname;
@@ -17576,12 +17581,6 @@ function menuBarBinCandidates() {
     // release/ -> release/DeepSeekMenuBar
     (0, import_node_path3.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
     // dist/ -> release/DeepSeekMenuBar
-  ];
-}
-function swiftSourceCandidates() {
-  return [
-    (0, import_node_path3.join)(currentDir2, "..", "..", "packages", "menubar", "macos", "DeepSeekMenuBarApp.swift"),
-    (0, import_node_path3.join)(currentDir2, "..", "packages", "menubar", "macos", "DeepSeekMenuBarApp.swift")
   ];
 }
 function fileExists2(path2) {
@@ -17600,21 +17599,12 @@ async function buildMenuBar() {
     console.error("\u2717 \u672A\u627E\u5230 swiftc\uFF0C\u8BF7\u5B89\u88C5 Xcode Command Line Tools: xcode-select --install");
     return null;
   }
-  let src = null;
-  for (const candidate of swiftSourceCandidates()) {
-    if (await fileExists2(candidate)) {
-      src = candidate;
-      break;
-    }
-  }
-  if (!src) {
-    console.error("\u2717 \u672A\u627E\u5230 Swift \u6E90\u7801\uFF0C\u8BF7\u4ECE\u6E90\u7801\u4ED3\u5E93\u8FD0\u884C\u6216\u9884\u5148\u7F16\u8BD1");
-    return null;
-  }
-  const outDir = (0, import_node_path3.join)(currentDir2, "..", "release");
+  const outDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path3.join)((0, import_node_os3.tmpdir)(), "deepseek-menubar-"));
+  const srcPath = (0, import_node_path3.join)(outDir, "DeepSeekMenuBarApp.swift");
+  (0, import_node_fs2.writeFileSync)(srcPath, DeepSeekMenuBarApp_default);
   const outPath = (0, import_node_path3.join)(outDir, "DeepSeekMenuBar");
   try {
-    (0, import_node_child_process.execSync)(`mkdir -p "${outDir}" && swiftc "${src}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os3.arch}-apple-macos13.0`, {
+    (0, import_node_child_process.execSync)(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os3.arch}-apple-macos13.0`, {
       stdio: "pipe"
     });
     (0, import_node_child_process.execSync)(`chmod +x "${outPath}"`);
@@ -17654,7 +17644,7 @@ function registerMenuBar(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.1");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.2");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

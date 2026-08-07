@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import { spawn, execSync } from 'node:child_process';
-import { access, constants } from 'node:fs';
+import { access, constants, mkdtempSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { platform, arch } from 'node:os';
+import { platform, arch, tmpdir } from 'node:os';
+import menuBarSwiftSource from '../../../menubar/macos/DeepSeekMenuBarApp.swift';
 
 // 兼容 CJS 和 ESM 的 __dirname
 const currentDir = (() => {
@@ -20,21 +21,13 @@ function menuBarBinCandidates(): string[] {
   ];
 }
 
-// Swift 源码候选路径
-function swiftSourceCandidates(): string[] {
-  return [
-    join(currentDir, '..', '..', 'packages', 'menubar', 'macos', 'DeepSeekMenuBarApp.swift'),
-    join(currentDir, '..', 'packages', 'menubar', 'macos', 'DeepSeekMenuBarApp.swift'),
-  ];
-}
-
 function fileExists(path: string): Promise<boolean> {
   return new Promise((resolve) => {
     access(path, constants.F_OK, (err) => resolve(!err));
   });
 }
 
-// 编译 Swift 菜单栏应用
+// 编译 Swift 菜单栏应用（Swift 源码内嵌于 CLI 单文件，解出到临时目录编译）
 async function buildMenuBar(): Promise<string | null> {
   if (platform() !== 'darwin') {
     console.error('✗ 菜单栏应用仅支持 macOS');
@@ -49,24 +42,12 @@ async function buildMenuBar(): Promise<string | null> {
     return null;
   }
 
-  // 查找源码
-  let src: string | null = null;
-  for (const candidate of swiftSourceCandidates()) {
-    if (await fileExists(candidate)) {
-      src = candidate;
-      break;
-    }
-  }
-  if (!src) {
-    console.error('✗ 未找到 Swift 源码，请从源码仓库运行或预先编译');
-    return null;
-  }
-
-  // 输出到 release/ 或临时目录
-  const outDir = join(currentDir, '..', 'release');
+  const outDir = mkdtempSync(join(tmpdir(), 'deepseek-menubar-'));
+  const srcPath = join(outDir, 'DeepSeekMenuBarApp.swift');
+  writeFileSync(srcPath, menuBarSwiftSource);
   const outPath = join(outDir, 'DeepSeekMenuBar');
   try {
-    execSync(`mkdir -p "${outDir}" && swiftc "${src}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${arch}-apple-macos13.0`, {
+    execSync(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${arch}-apple-macos13.0`, {
       stdio: 'pipe',
     });
     execSync(`chmod +x "${outPath}"`);

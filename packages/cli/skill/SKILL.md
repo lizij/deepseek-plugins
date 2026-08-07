@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.5.1"
+  version: "0.5.2"
 ---
 
 # DeepSeek Plugin Skill
@@ -34,7 +34,7 @@ scripts/deepseek-plugin-cli balance --json # JSON 格式
 
 ### 3. 菜单栏应用（MenuBar）
 
-启动原生 macOS 菜单栏应用，在菜单栏实时显示余额和可用状态，每 10 分钟自动刷新。仅支持 macOS。
+启动原生 macOS 菜单栏应用，在菜单栏实时显示余额和可用状态，每 10 分钟自动刷新。仅支持 macOS。Swift 源码内嵌于 CLI 单文件，运行时自动编译，独立分发即可用，无需额外文件。
 
 ```bash
 scripts/deepseek-plugin-cli menubar        # 启动菜单栏应用（自动编译）
