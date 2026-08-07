@@ -42,3 +42,6 @@ Thumbs.db
 
 # Skill zip
 deepseek-plugin-skill.zip
+
+# Release output
+release/

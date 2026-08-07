@@ -8,7 +8,7 @@
     "deepseek-plugin-cli": "./dist/deepseek-plugin-cli"
   },
   "scripts": {
-    "build": "tsup && (mv dist/cli.js dist/deepseek-plugin-cli 2>/dev/null || mv dist/cli.cjs dist/deepseek-plugin-cli) && chmod +x dist/deepseek-plugin-cli && cp dist/deepseek-plugin-cli skill/scripts/deepseek-plugin-cli",
+    "build": "tsup && (mv dist/cli.js dist/deepseek-plugin-cli 2>/dev/null || mv dist/cli.cjs dist/deepseek-plugin-cli) && chmod +x dist/deepseek-plugin-cli && cp dist/deepseek-plugin-cli skill/scripts/deepseek-plugin-cli && mkdir -p ../../release && cp dist/deepseek-plugin-cli ../../release/ && rm -rf ../../release/deepseek-plugin-skill && cp -r skill ../../release/deepseek-plugin-skill && cd ../../release && rm -f deepseek-plugin-skill.zip && zip -r deepseek-plugin-skill.zip deepseek-plugin-skill/ -x '*.DS_Store'",
     "dev": "tsup src/cli.ts --format esm --watch",
     "test": "vitest run"
   },
