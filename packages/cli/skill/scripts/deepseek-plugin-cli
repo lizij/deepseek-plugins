@@ -16996,7 +16996,7 @@ function registerAuth(program3) {
   });
 }
 
-// ../vision-analyze-helper/dist/chunk-AF6HSVBZ.js
+// ../vision-analyze-helper/dist/chunk-22EOWUVE.js
 async function loadConfig() {
   const baseUrl = await getKey("vision.base_url");
   const model = await getKey("vision.model");
@@ -17019,8 +17019,9 @@ async function loadAllConfigs() {
 }
 async function getFallbackCount() {
   for (let i = 0; ; i++) {
-    const apiKey = await getKey(`vision.fallback.${i}`);
-    if (!apiKey) return i;
+    const baseUrl = await getKey(`vision.fallback.${i}.base_url`);
+    const model = await getKey(`vision.fallback.${i}.model`);
+    if (!baseUrl && !model) return i;
   }
 }
 function missingConfigHint() {
@@ -17061,7 +17062,7 @@ async function normalizeImage(input) {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// ../vision-analyze-helper/dist/chunk-TR2SYGC2.js
+// ../vision-analyze-helper/dist/chunk-P7XUJ6X4.js
 var FETCH_TIMEOUT_MS = 12e4;
 async function analyzeImage(config, params) {
   const imageUri = await normalizeImage(params.image);
@@ -17089,8 +17090,8 @@ async function analyzeImage(config, params) {
             }
           ]
         }
-      ],
-      max_tokens: 4096
+      ]
+      // 不传 max_tokens，由各 API 使用自身默认值（不同模型上限不同）
     }),
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
@@ -17191,8 +17192,9 @@ function registerVision(program3) {
       console.error("\u9519\u8BEF\uFF1A\u8BF7\u63D0\u4F9B\u6709\u6548\u7684\u5907\u9009\u6A21\u578B\u7D22\u5F15\uFF08\u4ECE 0 \u5F00\u59CB\u7684\u975E\u8D1F\u6574\u6570\uFF09");
       process.exit(1);
     }
-    const apiKey = await getKey(`vision.fallback.${idx}`);
-    if (!apiKey) {
+    const baseUrl = await getKey(`vision.fallback.${idx}.base_url`);
+    const model = await getKey(`vision.fallback.${idx}.model`);
+    if (!baseUrl && !model) {
       console.error(`\u9519\u8BEF\uFF1A\u5907\u9009\u6A21\u578B #${idx} \u4E0D\u5B58\u5728`);
       process.exit(1);
     }
@@ -17652,7 +17654,7 @@ function registerMenuBar(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5").version("0.5.1");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

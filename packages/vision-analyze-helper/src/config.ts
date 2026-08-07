@@ -41,11 +41,12 @@ export async function loadAllConfigs(): Promise<VisionConfig[]> {
   return configs;
 }
 
-/** 获取已配置的备选模型数量（不含主模型）。 */
+/** 获取已配置的备选模型数量（不含主模型）。以 base_url/model 为准（添加时先写入）。 */
 export async function getFallbackCount(): Promise<number> {
   for (let i = 0; ; i++) {
-    const apiKey = await getKey(`vision.fallback.${i}`);
-    if (!apiKey) return i;
+    const baseUrl = await getKey(`vision.fallback.${i}.base_url`);
+    const model = await getKey(`vision.fallback.${i}.model`);
+    if (!baseUrl && !model) return i;
   }
 }
 

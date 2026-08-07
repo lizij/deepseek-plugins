@@ -105,8 +105,9 @@ export function registerVision(program: Command) {
         console.error('错误：请提供有效的备选模型索引（从 0 开始的非负整数）');
         process.exit(1);
       }
-      const apiKey = await getKey(`vision.fallback.${idx}`);
-      if (!apiKey) {
+      const baseUrl = await getKey(`vision.fallback.${idx}.base_url`);
+      const model = await getKey(`vision.fallback.${idx}.model`);
+      if (!baseUrl && !model) {
         console.error(`错误：备选模型 #${idx} 不存在`);
         process.exit(1);
       }

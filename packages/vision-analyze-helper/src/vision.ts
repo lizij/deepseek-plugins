@@ -46,7 +46,7 @@ export async function analyzeImage(
           ],
         },
       ],
-      max_tokens: 4096,
+      // 不传 max_tokens，由各 API 使用自身默认值（不同模型上限不同）
     }),
     signal: controller.signal,
   }).finally(() => clearTimeout(timer));

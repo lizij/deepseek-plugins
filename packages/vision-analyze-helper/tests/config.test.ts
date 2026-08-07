@@ -141,8 +141,8 @@ describe('config', () => {
 
     it('有 2 个备选时返回 2', async () => {
       vi.mocked(getKey).mockImplementation(async (svc: string) => {
-        if (svc === 'vision.fallback.0') return 'sk-fb0';
-        if (svc === 'vision.fallback.1') return 'sk-fb1';
+        if (svc === 'vision.fallback.0.base_url' || svc === 'vision.fallback.0.model') return 'x';
+        if (svc === 'vision.fallback.1.base_url' || svc === 'vision.fallback.1.model') return 'x';
         return null;
       });
       expect(await getFallbackCount()).toBe(2);
