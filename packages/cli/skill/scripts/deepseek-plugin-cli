@@ -17895,7 +17895,8 @@ function scanAndAggregate() {
     } catch {
       continue;
     }
-    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
+    const effectiveStart = startLine > lines.length ? 0 : startLine;
+    const newLines = effectiveStart > 0 ? lines.slice(effectiveStart) : lines;
     if (newLines.length === 0) {
       meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
       continue;
@@ -18164,7 +18165,7 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.7.1");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.7.2");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

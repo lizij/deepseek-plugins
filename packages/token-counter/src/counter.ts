@@ -354,7 +354,7 @@ export function scanAndAggregate(): ScanResult {
 
   for (const target of targets) {
     sources.add(target.source);
-    let stat;
+    let stat: ReturnType<typeof statSync>;
     try {
       stat = statSync(target.path);
     } catch {
@@ -377,8 +377,11 @@ export function scanAndAggregate(): ScanResult {
       continue;
     }
 
+    // 文件被截断/轮转（行数小于上次记录）时，重置为从头解析，避免重复计数
+    const effectiveStart = startLine > lines.length ? 0 : startLine;
+
     // 增量：只解析新增行
-    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
+    const newLines = effectiveStart > 0 ? lines.slice(effectiveStart) : lines;
     if (newLines.length === 0) {
       meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
       continue;
