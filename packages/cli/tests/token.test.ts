@@ -99,8 +99,8 @@ describe('token', () => {
     expect(out).toContain('1.9K');
   });
 
-  it('token report --clear-all 清空数据', () => {
-    const out = run('token report --clear-all');
+  it('token clear 清空数据', () => {
+    const out = run('token clear');
     expect(out).toContain('已清空');
     expect(existsSync(join(DATA_DIR, 'token-buckets.json'))).toBe(true);
   });

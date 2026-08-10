@@ -27,8 +27,7 @@ export function registerBalance(program: Command) {
       console.log(`账户状态: ${result.isAvailable ? '可用 ✓' : '不可用 ⚠'}`);
       console.log('');
       for (const b of result.balances) {
-        const label = b.currency === 'CNY' ? 'CNY' : b.currency;
-        console.log(`[${label}]`);
+        console.log(`[${b.currency}]`);
         console.log(`  总额: ${formatBalance(b.totalBalance, b.currency)}`);
         console.log(`  充值: ${formatBalance(b.toppedUpBalance, b.currency)}`);
         console.log(`  赠金: ${formatBalance(b.grantedBalance, b.currency)}`);

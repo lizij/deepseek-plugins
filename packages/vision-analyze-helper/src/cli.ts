@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { loadAllConfigs, missingConfigHint } from './config.js';
+import { loadAllConfigs, missingConfigHint, DEFAULT_PROMPT } from './config.js';
 import { analyzeImageWithFallback } from './vision.js';
 
 const program = new Command();
@@ -12,7 +12,7 @@ program
 
 program
   .requiredOption('-i, --image <input>', '图片输入：本地文件路径、http(s) URL 或 data: base64 URI')
-  .option('-p, --prompt <text>', '对图片的提问内容', '请详细描述这张图片的内容。')
+  .option('-p, --prompt <text>', '对图片的提问内容', DEFAULT_PROMPT)
   .option('-d, --detail <level>', '采样精度：low 更快更省 token，high 更精细', 'high')
   .action(async (opts) => {
     if (!['low', 'high'].includes(opts.detail)) {

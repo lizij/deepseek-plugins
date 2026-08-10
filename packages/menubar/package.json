@@ -13,8 +13,8 @@
     }
   },
   "scripts": {
-    "build": "tsup src/balance.ts src/index.ts --format esm --dts --clean --out-dir dist && mv dist/index.js dist/balance.1h.js && chmod +x dist/balance.1h.js",
-    "dev": "tsup src/index.ts --format esm --watch --out-dir dist && mv dist/index.js dist/balance.1h.js",
+    "build": "tsup src/balance.ts --format esm --dts --clean",
+    "dev": "tsup src/balance.ts --format esm --watch",
     "test": "vitest run"
   },
   "dependencies": {

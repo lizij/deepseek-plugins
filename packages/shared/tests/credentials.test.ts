@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setKey, getKey, unsetKey, listServices } from '../src/credentials.js';
+import { setKey, getKey, unsetKey, listServices, clearCache } from '../src/credentials.js';
 
 // 内存文件系统模拟
 let fsStore: Record<string, Buffer> = {};
@@ -37,6 +37,7 @@ describe('credentials', () => {
     fsStore = {};
     dirs = new Set();
     vi.clearAllMocks();
+    clearCache();
   });
 
   describe('setKey', () => {

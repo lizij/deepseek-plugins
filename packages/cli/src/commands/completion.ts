@@ -99,6 +99,18 @@ _deepseek_skill() {
   _describe 'skill 子命令' cmds
 }
 
+_deepseek_token() {
+  local -a cmds
+  cmds=(
+    'scan:扫描 agent 日志并聚合 token 用量'
+    'today:显示今日 token 用量汇总'
+    'buckets:查看最近的 token 桶数据'
+    'report:生成按日用量报告'
+    'clear:清空所有 token 数据'
+  )
+  _describe 'token 子命令' cmds
+}
+
 _deepseek_plugin_cli() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
@@ -109,6 +121,7 @@ _deepseek_plugin_cli() {
     'balance:查询 DeepSeek API 余额'
     'skill:安装与更新 Skill'
     'menubar:启动 macOS 菜单栏应用'
+    'token:Token 用量统计'
   )
   _arguments -C \\
     '(-h --help)'{-h,--help}'[显示帮助信息]' \\
@@ -123,6 +136,7 @@ _deepseek_plugin_cli() {
         vision) _deepseek_vision ;;
         balance) _arguments '--json[输出 JSON 格式]' ;;
         skill) _deepseek_skill ;;
+        token) _deepseek_token ;;
       esac
       ;;
   esac
@@ -135,11 +149,12 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 const BASH_COMPLETION = `# 由 deepseek-plugin-cli completion bash 生成
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill menubar"
+  local subcommands="auth vision balance skill menubar token"
   local auth_cmds="set get unset list"
   local vision_cmds="config fallback"
   local fallback_cmds="add list remove"
   local skill_cmds="install update"
+  local token_cmds="scan today buckets report clear"
   local services="deepseek vision vision.base_url vision.model"
 
   case "\$COMP_CWORD" in
@@ -149,6 +164,7 @@ _deepseek_plugin_cli_completion() {
         auth) COMPREPLY=( \$(compgen -W "\$auth_cmds" -- "\$cur") ) ;;
         vision) COMPREPLY=( \$(compgen -W "\$vision_cmds -p -d" -- "\$cur") ) ;;
         skill) COMPREPLY=( \$(compgen -W "\$skill_cmds" -- "\$cur") ) ;;
+        token) COMPREPLY=( \$(compgen -W "\$token_cmds" -- "\$cur") ) ;;
       esac
       ;;
     3)

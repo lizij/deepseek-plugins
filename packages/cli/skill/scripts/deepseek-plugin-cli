@@ -16904,10 +16904,28 @@ function getMachineFingerprint() {
 function deriveKey(salt) {
   return (0, import_crypto.pbkdf2Sync)(getMachineFingerprint(), salt, 1e5, 32, "sha256");
 }
+var cache = null;
+function getFileMtime() {
+  try {
+    return (0, import_fs2.statSync)(CREDENTIALS_FILE).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 function readCredentials() {
-  if (!(0, import_fs2.existsSync)(CREDENTIALS_FILE)) return {};
+  const mtime = getFileMtime();
+  if (cache && cache.mtime === mtime) {
+    return cache.creds;
+  }
+  if (!(0, import_fs2.existsSync)(CREDENTIALS_FILE)) {
+    cache = { mtime, creds: {} };
+    return cache.creds;
+  }
   const data = (0, import_fs2.readFileSync)(CREDENTIALS_FILE);
-  if (data.length < 44) return {};
+  if (data.length < 44) {
+    cache = { mtime, creds: {} };
+    return cache.creds;
+  }
   const salt = data.subarray(0, 16);
   const iv = data.subarray(16, 28);
   const authTag = data.subarray(28, 44);
@@ -16917,9 +16935,12 @@ function readCredentials() {
     const decipher = (0, import_crypto.createDecipheriv)("aes-256-gcm", key, iv);
     decipher.setAuthTag(authTag);
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    return JSON.parse(decrypted.toString("utf-8"));
+    const creds = JSON.parse(decrypted.toString("utf-8"));
+    cache = { mtime, creds };
+    return creds;
   } catch {
-    return {};
+    cache = { mtime, creds: {} };
+    return cache.creds;
   }
 }
 function writeCredentials(creds) {
@@ -16935,6 +16956,7 @@ function writeCredentials(creds) {
   const authTag = cipher.getAuthTag();
   const output = Buffer.concat([salt, iv, authTag, encrypted]);
   (0, import_fs2.writeFileSync)(CREDENTIALS_FILE, output, { mode: 384 });
+  cache = { mtime: getFileMtime(), creds };
 }
 async function setKey(service, key) {
   const creds = readCredentials();
@@ -16945,6 +16967,9 @@ async function getKey(service) {
   const creds = readCredentials();
   return creds[service] ?? null;
 }
+async function getAllKeys() {
+  return { ...readCredentials() };
+}
 async function unsetKey(service) {
   const creds = readCredentials();
   if (service in creds) {
@@ -16954,6 +16979,7 @@ async function unsetKey(service) {
         (0, import_fs2.unlinkSync)(CREDENTIALS_FILE);
       } catch {
       }
+      cache = null;
     } else {
       writeCredentials(creds);
     }
@@ -16996,33 +17022,30 @@ function registerAuth(program3) {
   });
 }
 
-// ../vision-analyze-helper/dist/chunk-22EOWUVE.js
-async function loadConfig() {
-  const baseUrl = await getKey("vision.base_url");
-  const model = await getKey("vision.model");
-  const apiKey = await getKey("vision");
-  if (!baseUrl || !model || !apiKey) return null;
-  return { baseUrl, model, apiKey };
-}
+// ../vision-analyze-helper/dist/chunk-DQAK4BEI.js
+var DEFAULT_PROMPT = "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u5F20\u56FE\u7247\u7684\u5185\u5BB9\u3002";
 async function loadAllConfigs() {
+  const all = await getAllKeys();
   const configs = [];
-  const primary = await loadConfig();
+  const primary = readConfigByPrefix(all, "vision");
   if (primary) configs.push(primary);
   for (let i = 0; ; i++) {
-    const baseUrl = await getKey(`vision.fallback.${i}.base_url`);
-    const model = await getKey(`vision.fallback.${i}.model`);
-    const apiKey = await getKey(`vision.fallback.${i}`);
-    if (!baseUrl || !model || !apiKey) break;
-    configs.push({ baseUrl, model, apiKey });
+    const cfg = readConfigByPrefix(all, `vision.fallback.${i}`);
+    if (!cfg) break;
+    configs.push(cfg);
   }
   return configs;
 }
+function readConfigByPrefix(all, prefix) {
+  const baseUrl = all[`${prefix}.base_url`];
+  const model = all[`${prefix}.model`];
+  const apiKey = all[prefix];
+  if (!baseUrl || !model || !apiKey) return null;
+  return { baseUrl, model, apiKey };
+}
 async function getFallbackCount() {
-  for (let i = 0; ; i++) {
-    const baseUrl = await getKey(`vision.fallback.${i}.base_url`);
-    const model = await getKey(`vision.fallback.${i}.model`);
-    if (!baseUrl && !model) return i;
-  }
+  const configs = await loadAllConfigs();
+  return Math.max(0, configs.length - 1);
 }
 function missingConfigHint() {
   return [
@@ -17062,12 +17085,12 @@ async function normalizeImage(input) {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// ../vision-analyze-helper/dist/chunk-P7XUJ6X4.js
+// ../vision-analyze-helper/dist/chunk-3GCZ53N5.js
 var FETCH_TIMEOUT_MS = 12e4;
 async function analyzeImage(config, params) {
   const imageUri = await normalizeImage(params.image);
   const detail = params.detail ?? "high";
-  const prompt = params.prompt?.trim() || "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u5F20\u56FE\u7247\u7684\u5185\u5BB9\u3002";
+  const prompt = params.prompt?.trim() || DEFAULT_PROMPT;
   const url = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -17113,7 +17136,7 @@ async function analyzeImageWithFallback(configs, params) {
       return await analyzeImage(config, params);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`[${config.model}] ${msg}`);
+      errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
     }
   }
   throw new Error(
@@ -17125,7 +17148,7 @@ ${errors.join("\n")}`
 // src/commands/vision.ts
 function registerVision(program3) {
   const vision = program3.command("vision").description("\u8C03\u7528\u89C6\u89C9\u6A21\u578B\u5206\u6790\u56FE\u7247\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BC6\u56FE\u80FD\u529B");
-  vision.argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u5F20\u56FE\u7247\u7684\u5185\u5BB9\u3002").option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
+  vision.argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PROMPT).option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
     if (!["low", "high"].includes(opts.detail)) {
       console.error("\u9519\u8BEF\uFF1A--detail \u4EC5\u652F\u6301 low \u6216 high");
       process.exit(1);
@@ -17186,26 +17209,40 @@ function registerVision(program3) {
       console.log(`  [${label}] ${configs[i].model} @ ${configs[i].baseUrl}`);
     }
   });
-  fallback.command("remove <index>").description("\u5220\u9664\u6307\u5B9A\u7D22\u5F15\u7684\u5907\u9009\u6A21\u578B").action(async (indexStr) => {
+  fallback.command("remove <index>").description("\u5220\u9664\u6307\u5B9A\u7D22\u5F15\u7684\u5907\u9009\u6A21\u578B\uFF0C\u5E76\u91CD\u6392\u540E\u7EED\u7D22\u5F15\u907F\u514D\u7A7A\u6D1E").action(async (indexStr) => {
     const idx = parseInt(indexStr, 10);
     if (isNaN(idx) || idx < 0) {
       console.error("\u9519\u8BEF\uFF1A\u8BF7\u63D0\u4F9B\u6709\u6548\u7684\u5907\u9009\u6A21\u578B\u7D22\u5F15\uFF08\u4ECE 0 \u5F00\u59CB\u7684\u975E\u8D1F\u6574\u6570\uFF09");
       process.exit(1);
     }
-    const baseUrl = await getKey(`vision.fallback.${idx}.base_url`);
-    const model = await getKey(`vision.fallback.${idx}.model`);
-    if (!baseUrl && !model) {
+    const all = await getAllKeys();
+    const hasTarget = all[`vision.fallback.${idx}`] || all[`vision.fallback.${idx}.base_url`] || all[`vision.fallback.${idx}.model`];
+    if (!hasTarget) {
       console.error(`\u9519\u8BEF\uFF1A\u5907\u9009\u6A21\u578B #${idx} \u4E0D\u5B58\u5728`);
       process.exit(1);
     }
     await unsetKey(`vision.fallback.${idx}`);
     await unsetKey(`vision.fallback.${idx}.base_url`);
     await unsetKey(`vision.fallback.${idx}.model`);
-    console.log(`\u2713 \u5907\u9009\u6A21\u578B #${idx} \u5DF2\u5220\u9664`);
+    const total = await getFallbackCount();
+    for (let i = idx + 1; i <= total + 1; i++) {
+      const srcPrefix = `vision.fallback.${i}`;
+      const dstPrefix = `vision.fallback.${i - 1}`;
+      const apiKey = all[srcPrefix];
+      const baseUrl = all[`${srcPrefix}.base_url`];
+      const model = all[`${srcPrefix}.model`];
+      if (apiKey) await setKey(dstPrefix, apiKey);
+      if (baseUrl) await setKey(`${dstPrefix}.base_url`, baseUrl);
+      if (model) await setKey(`${dstPrefix}.model`, model);
+      await unsetKey(srcPrefix);
+      await unsetKey(`${srcPrefix}.base_url`);
+      await unsetKey(`${srcPrefix}.model`);
+    }
+    console.log(`\u2713 \u5907\u9009\u6A21\u578B #${idx} \u5DF2\u5220\u9664\uFF0C\u540E\u7EED\u7D22\u5F15\u5DF2\u91CD\u6392`);
   });
 }
 
-// ../menubar/dist/chunk-ONRO2YB5.js
+// ../menubar/dist/balance.js
 var BALANCE_URL = "https://api.deepseek.com/user/balance";
 function formatBalance(s, currency) {
   const n = parseFloat(s);
@@ -17267,8 +17304,7 @@ function registerBalance(program3) {
     console.log(`\u8D26\u6237\u72B6\u6001: ${result.isAvailable ? "\u53EF\u7528 \u2713" : "\u4E0D\u53EF\u7528 \u26A0"}`);
     console.log("");
     for (const b of result.balances) {
-      const label = b.currency === "CNY" ? "CNY" : b.currency;
-      console.log(`[${label}]`);
+      console.log(`[${b.currency}]`);
       console.log(`  \u603B\u989D: ${formatBalance(b.totalBalance, b.currency)}`);
       console.log(`  \u5145\u503C: ${formatBalance(b.toppedUpBalance, b.currency)}`);
       console.log(`  \u8D60\u91D1: ${formatBalance(b.grantedBalance, b.currency)}`);
@@ -17277,48 +17313,57 @@ function registerBalance(program3) {
 }
 
 // src/commands/skill.ts
+var import_promises3 = require("fs/promises");
+var import_node_path3 = require("path");
+var import_node_os2 = require("os");
+
+// src/utils.ts
 var import_promises2 = require("fs/promises");
 var import_node_path2 = require("path");
-var import_node_fs = require("fs");
-var import_node_os2 = require("os");
 var import_node_url = require("url");
 var import_meta = {};
-var currentDir = (() => {
+function getCurrentDir() {
   if (typeof __dirname !== "undefined") return __dirname;
   return (0, import_node_path2.dirname)((0, import_node_url.fileURLToPath)(import_meta.url));
-})();
-var SKILL_NAME = "deepseek-plugin-skill";
-var TRAE_SKILL_DIR = (0, import_node_path2.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
-var TRAE_SKILL_FILE = (0, import_node_path2.join)(TRAE_SKILL_DIR, "SKILL.md");
-var GLOBAL_SKILL_DIR = (0, import_node_path2.join)((0, import_node_os2.homedir)(), ".agents", "skills", SKILL_NAME);
+}
 async function fileExists(path2) {
   try {
-    await (0, import_promises2.access)(path2, import_node_fs.constants.F_OK);
+    await (0, import_promises2.access)(path2, import_promises2.constants.F_OK);
     return true;
   } catch {
     return false;
   }
 }
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+// src/commands/skill.ts
+var currentDir = getCurrentDir();
+var SKILL_NAME = "deepseek-plugin-skill";
+var TRAE_SKILL_DIR = (0, import_node_path3.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
+var TRAE_SKILL_FILE = (0, import_node_path3.join)(TRAE_SKILL_DIR, "SKILL.md");
+var GLOBAL_SKILL_DIR = (0, import_node_path3.join)((0, import_node_os2.homedir)(), ".agents", "skills", SKILL_NAME);
 async function findSkillSourceDir() {
   const candidates = [
-    (0, import_node_path2.join)(currentDir, "..", "skill"),
+    (0, import_node_path3.join)(currentDir, "..", "skill"),
     // packages/cli/dist -> packages/cli/skill
-    (0, import_node_path2.join)(currentDir, "deepseek-plugin-skill")
+    (0, import_node_path3.join)(currentDir, "deepseek-plugin-skill")
     // release/ -> release/deepseek-plugin-skill
   ];
   for (const dir of candidates) {
-    if (await fileExists((0, import_node_path2.join)(dir, "SKILL.md"))) return dir;
+    if (await fileExists((0, import_node_path3.join)(dir, "SKILL.md"))) return dir;
   }
   return null;
 }
 async function installSkill(targetDir) {
   const sourceDir = await findSkillSourceDir();
   if (!sourceDir) {
-    console.error("\u2717 \u672A\u627E\u5230\u6E90 Skill \u76EE\u5F55\uFF0C\u8BF7\u5148\u6267\u884C pnpm -r build");
-    process.exit(1);
+    fail("\u2717 \u672A\u627E\u5230\u6E90 Skill \u76EE\u5F55\uFF0C\u8BF7\u5148\u6267\u884C pnpm -r build");
   }
-  await (0, import_promises2.mkdir)(targetDir, { recursive: true });
-  await (0, import_promises2.cp)(sourceDir, targetDir, { recursive: true });
+  await (0, import_promises3.mkdir)(targetDir, { recursive: true });
+  await (0, import_promises3.cp)(sourceDir, targetDir, { recursive: true });
   console.log(`  \u2713 ${SKILL_NAME} -> ${targetDir}`);
 }
 function registerSkill(program3) {
@@ -17465,6 +17510,18 @@ _deepseek_skill() {
   _describe 'skill \u5B50\u547D\u4EE4' cmds
 }
 
+_deepseek_token() {
+  local -a cmds
+  cmds=(
+    'scan:\u626B\u63CF agent \u65E5\u5FD7\u5E76\u805A\u5408 token \u7528\u91CF'
+    'today:\u663E\u793A\u4ECA\u65E5 token \u7528\u91CF\u6C47\u603B'
+    'buckets:\u67E5\u770B\u6700\u8FD1\u7684 token \u6876\u6570\u636E'
+    'report:\u751F\u6210\u6309\u65E5\u7528\u91CF\u62A5\u544A'
+    'clear:\u6E05\u7A7A\u6240\u6709 token \u6570\u636E'
+  )
+  _describe 'token \u5B50\u547D\u4EE4' cmds
+}
+
 _deepseek_plugin_cli() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
@@ -17475,6 +17532,7 @@ _deepseek_plugin_cli() {
     'balance:\u67E5\u8BE2 DeepSeek API \u4F59\u989D'
     'skill:\u5B89\u88C5\u4E0E\u66F4\u65B0 Skill'
     'menubar:\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528'
+    'token:Token \u7528\u91CF\u7EDF\u8BA1'
   )
   _arguments -C \\
     '(-h --help)'{-h,--help}'[\u663E\u793A\u5E2E\u52A9\u4FE1\u606F]' \\
@@ -17489,6 +17547,7 @@ _deepseek_plugin_cli() {
         vision) _deepseek_vision ;;
         balance) _arguments '--json[\u8F93\u51FA JSON \u683C\u5F0F]' ;;
         skill) _deepseek_skill ;;
+        token) _deepseek_token ;;
       esac
       ;;
   esac
@@ -17499,11 +17558,12 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 var BASH_COMPLETION = `# \u7531 deepseek-plugin-cli completion bash \u751F\u6210
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill menubar"
+  local subcommands="auth vision balance skill menubar token"
   local auth_cmds="set get unset list"
   local vision_cmds="config fallback"
   local fallback_cmds="add list remove"
   local skill_cmds="install update"
+  local token_cmds="scan today buckets report clear"
   local services="deepseek vision vision.base_url vision.model"
 
   case "$COMP_CWORD" in
@@ -17513,6 +17573,7 @@ _deepseek_plugin_cli_completion() {
         auth) COMPREPLY=( $(compgen -W "$auth_cmds" -- "$cur") ) ;;
         vision) COMPREPLY=( $(compgen -W "$vision_cmds -p -d" -- "$cur") ) ;;
         skill) COMPREPLY=( $(compgen -W "$skill_cmds" -- "$cur") ) ;;
+        token) COMPREPLY=( $(compgen -W "$token_cmds" -- "$cur") ) ;;
       esac
       ;;
     3)
@@ -17561,32 +17622,22 @@ function registerCompletion(program3) {
 
 // src/commands/menubar.ts
 var import_node_child_process = require("child_process");
-var import_node_fs2 = require("fs");
-var import_node_path3 = require("path");
-var import_node_url2 = require("url");
+var import_node_fs = require("fs");
+var import_node_path4 = require("path");
 var import_node_os3 = require("os");
 
 // ../menubar/macos/DeepSeekMenuBarApp.swift
 var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u660E\u7EC6\u9879\uFF08\u6309 Agent / \u6309 Model \u62C6\u5206\uFF09\nstruct TokenBreakdownItem: Codable {\n    let name: String\n    let tokens: Int\n\n    enum CodingKeys: String, CodingKey {\n        case name\n        case tokens\n    }\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n    let bySource: [TokenBreakdownItem]\n    let byModel: [TokenBreakdownItem]\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n        case bySource = "by_source"\n        case byModel = "by_model"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchBalance() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "balance", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                        self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                        self?.statusColor = .gray\n                    }\n                    return\n                }\n\n                let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n                DispatchQueue.main.async {\n                    if let main = result.balances.first {\n                        self?.balanceText = "\u603B\u989D: \\(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"\n                    } else {\n                        self?.balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n                    }\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n                    self?.statusColor = result.isAvailable ? .green : .red\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                    self?.statusColor = .gray\n                }\n            }\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n    @Published var bySource: [TokenBreakdownItem] = []\n    @Published var byModel: [TokenBreakdownItem] = []\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchTokens() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            // \u5148\u589E\u91CF\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u786E\u4FDD\u672C\u5730\u7EDF\u8BA1\u6570\u636E\u6700\u65B0\n            self?.runCLI(arguments: [cliPath, "token", "scan"])\n\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "token", "today", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.tokenText = "Token: \u65E0\u6570\u636E"\n                        self?.tokenDetail = ""\n                        self?.bySource = []\n                        self?.byModel = []\n                    }\n                    return\n                }\n\n                let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n                DispatchQueue.main.async {\n                    self?.tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n                    var parts: [String] = []\n                    parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n                    parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n                    parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n                    parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n                    self?.tokenDetail = parts.joined(separator: "  ")\n                    self?.bySource = summary.bySource\n                    self?.byModel = summary.byModel\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n                    self?.tokenDetail = ""\n                    self?.bySource = []\n                    self?.byModel = []\n                }\n            }\n        }\n    }\n\n    /// \u8FD0\u884C CLI \u547D\u4EE4\uFF08\u5FFD\u7565\u8F93\u51FA\uFF0C\u4EC5\u786E\u4FDD\u6267\u884C\u5B8C\u6210\uFF09\n    private func runCLI(arguments: [String]) {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = arguments\n        task.standardOutput = Pipe()\n        task.standardError = Pipe()\n        do {\n            try task.run()\n            task.waitUntilExit()\n        } catch {\n            // \u5FFD\u7565\u626B\u63CF\u5931\u8D25\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u8BFB\u53D6\n        }\n    }\n}\n\n/// \u6570\u5B57\u683C\u5F0F\u5316\uFF08K/M\uFF09\nfunc formatNumber(_ n: Int) -> String {\n    if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n    if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n    return String(n)\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF08\u7B2C 1 \u884C\uFF09\uFF1A\u70B9\u51FB\u5C55\u5F00\u6309 Agent / \u6309 Model \u660E\u7EC6\n            Menu {\n                if tokenManager.bySource.isEmpty && tokenManager.byModel.isEmpty {\n                    Text("\u6682\u65E0\u660E\u7EC6")\n                } else {\n                    if !tokenManager.bySource.isEmpty {\n                        Menu("\u6309 Agent") {\n                            ForEach(tokenManager.bySource, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                    if !tokenManager.byModel.isEmpty {\n                        Menu("\u6309 Model") {\n                            ForEach(tokenManager.byModel, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\uFF08\u8F93\u5165/\u8F93\u51FA/\u7F13\u5B58/\u8FD17\u5929\uFF09\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
 
 // src/commands/menubar.ts
-var import_meta2 = {};
-var currentDir2 = (() => {
-  if (typeof __dirname !== "undefined") return __dirname;
-  return (0, import_node_path3.dirname)((0, import_node_url2.fileURLToPath)(import_meta2.url));
-})();
+var currentDir2 = getCurrentDir();
 function menuBarBinCandidates() {
   return [
-    (0, import_node_path3.join)(currentDir2, "DeepSeekMenuBar"),
+    (0, import_node_path4.join)(currentDir2, "DeepSeekMenuBar"),
     // release/ -> release/DeepSeekMenuBar
-    (0, import_node_path3.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
+    (0, import_node_path4.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
     // dist/ -> release/DeepSeekMenuBar
   ];
-}
-function fileExists2(path2) {
-  return new Promise((resolve) => {
-    (0, import_node_fs2.access)(path2, import_node_fs2.constants.F_OK, (err) => resolve(!err));
-  });
 }
 async function buildMenuBar() {
   if ((0, import_node_os3.platform)() !== "darwin") {
@@ -17599,10 +17650,10 @@ async function buildMenuBar() {
     console.error("\u2717 \u672A\u627E\u5230 swiftc\uFF0C\u8BF7\u5B89\u88C5 Xcode Command Line Tools: xcode-select --install");
     return null;
   }
-  const outDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path3.join)((0, import_node_os3.tmpdir)(), "deepseek-menubar-"));
-  const srcPath = (0, import_node_path3.join)(outDir, "DeepSeekMenuBarApp.swift");
-  (0, import_node_fs2.writeFileSync)(srcPath, DeepSeekMenuBarApp_default);
-  const outPath = (0, import_node_path3.join)(outDir, "DeepSeekMenuBar");
+  const outDir = (0, import_node_fs.mkdtempSync)((0, import_node_path4.join)((0, import_node_os3.tmpdir)(), "deepseek-menubar-"));
+  const srcPath = (0, import_node_path4.join)(outDir, "DeepSeekMenuBarApp.swift");
+  (0, import_node_fs.writeFileSync)(srcPath, DeepSeekMenuBarApp_default);
+  const outPath = (0, import_node_path4.join)(outDir, "DeepSeekMenuBar");
   try {
     (0, import_node_child_process.execSync)(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os3.arch}-apple-macos13.0`, {
       stdio: "pipe"
@@ -17617,7 +17668,7 @@ async function buildMenuBar() {
 }
 async function resolveMenuBarBin() {
   for (const candidate of menuBarBinCandidates()) {
-    if (await fileExists2(candidate)) return candidate;
+    if (await fileExists(candidate)) return candidate;
   }
   return buildMenuBar();
 }
@@ -17625,12 +17676,12 @@ function registerMenuBar(program3) {
   program3.command("menubar").description("\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528\uFF08\u663E\u793A\u4F59\u989D\uFF0C\u6BCF 10 \u5206\u949F\u5237\u65B0\uFF09").option("--build", "\u5F3A\u5236\u91CD\u65B0\u7F16\u8BD1\u83DC\u5355\u680F\u5E94\u7528").action(async (opts) => {
     if (opts.build) {
       const bin2 = await buildMenuBar();
-      if (!bin2) process.exit(1);
+      if (!bin2) fail("\u83DC\u5355\u680F\u5E94\u7528\u7F16\u8BD1\u5931\u8D25");
       console.log(`\u2713 \u7F16\u8BD1\u5B8C\u6210: ${bin2}`);
       return;
     }
     const bin = await resolveMenuBarBin();
-    if (!bin) process.exit(1);
+    if (!bin) fail("\u83DC\u5355\u680F\u5E94\u7528\u542F\u52A8\u5931\u8D25");
     const cliPath = process.argv[1] || "deepseek-plugin-cli";
     const child = (0, import_node_child_process.spawn)(bin, [cliPath], {
       detached: true,
@@ -17648,8 +17699,8 @@ var import_crypto2 = require("crypto");
 var import_module = require("module");
 var import_os2 = require("os");
 var import_path3 = require("path");
-var import_meta3 = {};
-var require2 = (0, import_module.createRequire)(import_meta3.url || "file:///noop.js");
+var import_meta2 = {};
+var require2 = (0, import_module.createRequire)(import_meta2.url || "file:///noop.js");
 var DATA_DIR = (0, import_path3.join)((0, import_os2.homedir)(), ".deepseek-plugins");
 var BUCKET_FILE = (0, import_path3.join)(DATA_DIR, "token-buckets.json");
 var SCAN_META_FILE = (0, import_path3.join)(DATA_DIR, "token-scan-meta.json");
@@ -18228,12 +18279,7 @@ function registerToken(program3) {
       );
     }
   });
-  tokenCmd.command("report").description("\u751F\u6210\u6309\u65E5\u7528\u91CF\u62A5\u544A\uFF08\u57FA\u4E8E\u6876\u6570\u636E\uFF09").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear-all", "\u6E05\u7A7A\u6240\u6709 token \u6570\u636E\uFF08\u6876 + \u626B\u63CF\u5143\u6570\u636E\uFF09").action(async (opts) => {
-    if (opts.clearAll) {
-      clearAll();
-      console.log("\u6240\u6709 token \u6570\u636E\u5DF2\u6E05\u7A7A");
-      return;
-    }
+  tokenCmd.command("report").description("\u751F\u6210\u6309\u65E5\u7528\u91CF\u62A5\u544A\uFF08\u57FA\u4E8E\u6876\u6570\u636E\uFF09").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").action(async (opts) => {
     const days = parseInt(opts.days, 10);
     if (isNaN(days) || days <= 0) {
       console.error("days \u5FC5\u987B\u662F\u6B63\u6574\u6570");
@@ -18241,11 +18287,15 @@ function registerToken(program3) {
     }
     console.log(formatReport(days));
   });
+  tokenCmd.command("clear").description("\u6E05\u7A7A\u6240\u6709 token \u6570\u636E\uFF08\u6876 + \u626B\u63CF\u5143\u6570\u636E\uFF09").action(async () => {
+    clearAll();
+    console.log("\u6240\u6709 token \u6570\u636E\u5DF2\u6E05\u7A7A");
+  });
 }
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.9.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.10.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

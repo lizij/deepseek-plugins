@@ -77,18 +77,20 @@ export function registerToken(program: Command) {
     .command('report')
     .description('生成按日用量报告（基于桶数据）')
     .option('-d, --days <number>', '统计天数', '7')
-    .option('--clear-all', '清空所有 token 数据（桶 + 扫描元数据）')
     .action(async (opts) => {
-      if (opts.clearAll) {
-        clearAll();
-        console.log('所有 token 数据已清空');
-        return;
-      }
       const days = parseInt(opts.days, 10);
       if (isNaN(days) || days <= 0) {
         console.error('days 必须是正整数');
         process.exit(1);
       }
       console.log(formatReport(days));
+    });
+
+  tokenCmd
+    .command('clear')
+    .description('清空所有 token 数据（桶 + 扫描元数据）')
+    .action(async () => {
+      clearAll();
+      console.log('所有 token 数据已清空');
     });
 }

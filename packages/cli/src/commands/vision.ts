@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { setKey, unsetKey, getKey } from '@deepseek-plugins/shared';
-import { loadAllConfigs, getFallbackCount, missingConfigHint } from '@deepseek-plugins/vision-analyze-helper';
+import { setKey, unsetKey, getKey, getAllKeys } from '@deepseek-plugins/shared';
+import { loadAllConfigs, getFallbackCount, missingConfigHint, DEFAULT_PROMPT } from '@deepseek-plugins/vision-analyze-helper';
 import { analyzeImageWithFallback } from '@deepseek-plugins/vision-analyze-helper/vision';
 
 export function registerVision(program: Command) {
@@ -11,7 +11,7 @@ export function registerVision(program: Command) {
   // vision <image> — 默认行为，使用容灾调用
   vision
     .argument('<image>', '图片路径、URL 或 base64')
-    .option('-p, --prompt <text>', '对图片的提问内容', '请详细描述这张图片的内容。')
+    .option('-p, --prompt <text>', '对图片的提问内容', DEFAULT_PROMPT)
     .option('-d, --detail <level>', '采样精度：low 更快更省 token，high 更精细', 'high')
     .action(async (image: string, opts) => {
       if (!['low', 'high'].includes(opts.detail)) {
@@ -98,22 +98,46 @@ export function registerVision(program: Command) {
 
   fallback
     .command('remove <index>')
-    .description('删除指定索引的备选模型')
+    .description('删除指定索引的备选模型，并重排后续索引避免空洞')
     .action(async (indexStr: string) => {
       const idx = parseInt(indexStr, 10);
       if (isNaN(idx) || idx < 0) {
         console.error('错误：请提供有效的备选模型索引（从 0 开始的非负整数）');
         process.exit(1);
       }
-      const baseUrl = await getKey(`vision.fallback.${idx}.base_url`);
-      const model = await getKey(`vision.fallback.${idx}.model`);
-      if (!baseUrl && !model) {
+
+      const all = await getAllKeys();
+      const hasTarget =
+        all[`vision.fallback.${idx}`] ||
+        all[`vision.fallback.${idx}.base_url`] ||
+        all[`vision.fallback.${idx}.model`];
+      if (!hasTarget) {
         console.error(`错误：备选模型 #${idx} 不存在`);
         process.exit(1);
       }
+
+      // 删除目标索引的三个 key
       await unsetKey(`vision.fallback.${idx}`);
       await unsetKey(`vision.fallback.${idx}.base_url`);
       await unsetKey(`vision.fallback.${idx}.model`);
-      console.log(`✓ 备选模型 #${idx} 已删除`);
+
+      // 将后续索引整体前移一位，避免空洞导致 loadAllConfigs 在第一个缺失处停止
+      const total = await getFallbackCount();
+      for (let i = idx + 1; i <= total + 1; i++) {
+        const srcPrefix = `vision.fallback.${i}`;
+        const dstPrefix = `vision.fallback.${i - 1}`;
+        const apiKey = all[srcPrefix];
+        const baseUrl = all[`${srcPrefix}.base_url`];
+        const model = all[`${srcPrefix}.model`];
+        if (apiKey) await setKey(dstPrefix, apiKey);
+        if (baseUrl) await setKey(`${dstPrefix}.base_url`, baseUrl);
+        if (model) await setKey(`${dstPrefix}.model`, model);
+        // 清理源位置
+        await unsetKey(srcPrefix);
+        await unsetKey(`${srcPrefix}.base_url`);
+        await unsetKey(`${srcPrefix}.model`);
+      }
+
+      console.log(`✓ 备选模型 #${idx} 已删除，后续索引已重排`);
     });
 }

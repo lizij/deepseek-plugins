@@ -1,30 +1,15 @@
 import { Command } from 'commander';
-import { cp, access, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { constants } from 'node:fs';
+import { cp, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { getCurrentDir, fileExists, fail } from '../utils.js';
 
-// 兼容 CJS 和 ESM 的 __dirname
-const currentDir = (() => {
-  // @ts-ignore CJS global
-  if (typeof __dirname !== 'undefined') return __dirname;
-  return dirname(fileURLToPath(import.meta.url));
-})();
+const currentDir = getCurrentDir();
 const SKILL_NAME = 'deepseek-plugin-skill';
 // 本地安装目标：当前工作目录下的 .trae/skills/
 const TRAE_SKILL_DIR = join(process.cwd(), '.trae', 'skills', SKILL_NAME);
 const TRAE_SKILL_FILE = join(TRAE_SKILL_DIR, 'SKILL.md');
 const GLOBAL_SKILL_DIR = join(homedir(), '.agents', 'skills', SKILL_NAME);
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // Skill 源目录候选：开发构建目录或 release 产物目录，取第一个存在者。
 async function findSkillSourceDir(): Promise<string | null> {
@@ -41,8 +26,7 @@ async function findSkillSourceDir(): Promise<string | null> {
 async function installSkill(targetDir: string) {
   const sourceDir = await findSkillSourceDir();
   if (!sourceDir) {
-    console.error('✗ 未找到源 Skill 目录，请先执行 pnpm -r build');
-    process.exit(1);
+    fail('✗ 未找到源 Skill 目录，请先执行 pnpm -r build');
   }
 
   await mkdir(targetDir, { recursive: true });

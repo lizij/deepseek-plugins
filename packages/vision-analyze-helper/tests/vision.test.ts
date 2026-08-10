@@ -172,7 +172,7 @@ describe('vision', () => {
         await analyzeImageWithFallback([mockConfig], { image: 'https://example.com/photo.png' });
         expect.fail('should have thrown');
       } catch (err: any) {
-        expect(err.message).toContain('[gpt-4o]');
+        expect(err.message).toContain('gpt-4o');
         expect(err.message).toContain('network error');
       }
     });

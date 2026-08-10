@@ -1,4 +1,5 @@
 import type { VisionConfig } from './config.js';
+import { DEFAULT_PROMPT } from './config.js';
 import { normalizeImage } from './image.js';
 
 /** 视觉模型调用参数。 */
@@ -21,7 +22,7 @@ export async function analyzeImage(
 ): Promise<string> {
   const imageUri = await normalizeImage(params.image);
   const detail = params.detail ?? 'high';
-  const prompt = params.prompt?.trim() || '请详细描述这张图片的内容。';
+  const prompt = params.prompt?.trim() || DEFAULT_PROMPT;
 
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const controller = new AbortController();
@@ -81,7 +82,7 @@ export async function analyzeImageWithFallback(
       return await analyzeImage(config, params);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`[${config.model}] ${msg}`);
+      errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
     }
   }
 

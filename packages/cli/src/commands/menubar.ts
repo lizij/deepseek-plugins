@@ -1,17 +1,12 @@
 import { Command } from 'commander';
 import { spawn, execSync } from 'node:child_process';
-import { access, constants, mkdtempSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { platform, arch, tmpdir } from 'node:os';
+import { getCurrentDir, fileExists, fail } from '../utils.js';
 import menuBarSwiftSource from '../../../menubar/macos/DeepSeekMenuBarApp.swift';
 
-// 兼容 CJS 和 ESM 的 __dirname
-const currentDir = (() => {
-  // @ts-ignore CJS global
-  if (typeof __dirname !== 'undefined') return __dirname;
-  return dirname(fileURLToPath(import.meta.url));
-})();
+const currentDir = getCurrentDir();
 
 // 菜单栏应用二进制候选路径：release/ 或开发构建目录
 function menuBarBinCandidates(): string[] {
@@ -19,12 +14,6 @@ function menuBarBinCandidates(): string[] {
     join(currentDir, 'DeepSeekMenuBar'), // release/ -> release/DeepSeekMenuBar
     join(currentDir, '..', 'release', 'DeepSeekMenuBar'), // dist/ -> release/DeepSeekMenuBar
   ];
-}
-
-function fileExists(path: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    access(path, constants.F_OK, (err) => resolve(!err));
-  });
 }
 
 // 编译 Swift 菜单栏应用（Swift 源码内嵌于 CLI 单文件，解出到临时目录编译）
@@ -77,13 +66,13 @@ export function registerMenuBar(program: Command) {
     .action(async (opts: { build?: boolean }) => {
       if (opts.build) {
         const bin = await buildMenuBar();
-        if (!bin) process.exit(1);
+        if (!bin) fail('菜单栏应用编译失败');
         console.log(`✓ 编译完成: ${bin}`);
         return;
       }
 
       const bin = await resolveMenuBarBin();
-      if (!bin) process.exit(1);
+      if (!bin) fail('菜单栏应用启动失败');
 
       // 启动菜单栏应用（detached，后台运行），传递 CLI 自身路径
       const cliPath = process.argv[1] || 'deepseek-plugin-cli';
