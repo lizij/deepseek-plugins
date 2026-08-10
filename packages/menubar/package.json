@@ -4,6 +4,9 @@
   "private": true,
   "description": "Native macOS menu bar app for DeepSeek plugins (balance, status, etc.)",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/balance.js",
   "types": "./dist/balance.d.ts",
   "exports": {
@@ -15,7 +18,7 @@
   "scripts": {
     "build": "tsup src/balance.ts --format esm --dts --clean",
     "dev": "tsup src/balance.ts --format esm --watch",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@deepseek-plugins/shared": "workspace:*"

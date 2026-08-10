@@ -6,6 +6,11 @@ import { homedir, hostname, userInfo, platform, arch } from 'node:os';
 const CONFIG_DIR = join(homedir(), '.deepseek-plugins');
 const CREDENTIALS_FILE = join(CONFIG_DIR, 'credentials.enc');
 
+// 文件格式头：魔数(4) + 版本(1)，用于未来格式迁移时识别旧格式
+const FILE_MAGIC = Buffer.from([0x44, 0x53, 0x43, 0x31]); // "DSC1"
+const FILE_VERSION = 1;
+const HEADER_SIZE = FILE_MAGIC.length + 1; // 5 bytes
+
 /** 从机器指纹派生加密密钥，确保跨机器不可解密。 */
 function getMachineFingerprint(): string {
   return `${hostname()}:${userInfo().username}:${platform()}:${arch()}`;
@@ -48,16 +53,34 @@ function readCredentials(): Record<string, string> {
   }
 
   const data = readFileSync(CREDENTIALS_FILE);
-  // 格式: salt(16) | iv(12) | authTag(16) | ciphertext
-  if (data.length < 44) {
-    cache = { mtime, creds: {} };
-    return cache.creds;
-  }
 
-  const salt = data.subarray(0, 16);
-  const iv = data.subarray(16, 28);
-  const authTag = data.subarray(28, 44);
-  const encrypted = data.subarray(44);
+  // 检测文件格式：有头部 → 新格式，无头部 → 旧格式（向后兼容）
+  const hasHeader = data.length >= HEADER_SIZE &&
+    data.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC);
+
+  let salt: Buffer, iv: Buffer, authTag: Buffer, encrypted: Buffer;
+  if (hasHeader) {
+    // 新格式: magic(4) | version(1) | salt(16) | iv(12) | authTag(16) | ciphertext
+    if (data.length < HEADER_SIZE + 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    const offset = HEADER_SIZE;
+    salt = data.subarray(offset, offset + 16);
+    iv = data.subarray(offset + 16, offset + 28);
+    authTag = data.subarray(offset + 28, offset + 44);
+    encrypted = data.subarray(offset + 44);
+  } else {
+    // 旧格式: salt(16) | iv(12) | authTag(16) | ciphertext
+    if (data.length < 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    salt = data.subarray(0, 16);
+    iv = data.subarray(16, 28);
+    authTag = data.subarray(28, 44);
+    encrypted = data.subarray(44);
+  }
 
   try {
     const key = deriveKey(salt);
@@ -89,7 +112,7 @@ function writeCredentials(creds: Record<string, string>): void {
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
-  const output = Buffer.concat([salt, iv, authTag, encrypted]);
+  const output = Buffer.concat([FILE_MAGIC, Buffer.from([FILE_VERSION]), salt, iv, authTag, encrypted]);
   writeFileSync(CREDENTIALS_FILE, output, { mode: 0o600 });
 
   // 写入后更新缓存

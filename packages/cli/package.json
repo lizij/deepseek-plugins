@@ -1,9 +1,12 @@
 {
   "name": "@deepseek-plugins/cli",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "description": "Unified CLI for DeepSeek plugins: API key management, vision analysis, balance query, skill management",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "deepseek-plugin-cli": "./dist/deepseek-plugin-cli"
   },
@@ -15,7 +18,6 @@
   "dependencies": {
     "@deepseek-plugins/shared": "workspace:*",
     "@deepseek-plugins/vision-analyze-helper": "workspace:*",
-    "@deepseek-plugins/menubar": "workspace:*",
     "@deepseek-plugins/token-counter": "workspace:*",
     "@inquirer/prompts": "^7.0.0",
     "commander": "^12.1.0"

@@ -4,6 +4,9 @@
   "private": true,
   "description": "Image recognition helper CLI + cross-agent Skill for text-only models",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/config.js",
   "types": "./dist/config.d.ts",
   "exports": {

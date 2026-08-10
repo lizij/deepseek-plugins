@@ -4,6 +4,9 @@
   "private": true,
   "description": "Token usage counter: scan agent logs (Claude Code / Codex / Cursor / opencode) and aggregate by 30-min buckets",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/counter.js",
   "types": "./dist/counter.d.ts",
   "exports": {

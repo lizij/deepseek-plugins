@@ -16891,13 +16891,16 @@ var esm_default11 = createPrompt((config, done) => {
   return `${lines}${cursorHide}`;
 });
 
-// ../shared/dist/credentials.js
+// ../shared/dist/chunk-IJ6QR7OW.js
 var import_crypto = require("crypto");
 var import_fs2 = require("fs");
 var import_path = require("path");
 var import_os = require("os");
 var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".deepseek-plugins");
 var CREDENTIALS_FILE = (0, import_path.join)(CONFIG_DIR, "credentials.enc");
+var FILE_MAGIC = Buffer.from([68, 83, 67, 49]);
+var FILE_VERSION = 1;
+var HEADER_SIZE = FILE_MAGIC.length + 1;
 function getMachineFingerprint() {
   return `${(0, import_os.hostname)()}:${(0, import_os.userInfo)().username}:${(0, import_os.platform)()}:${(0, import_os.arch)()}`;
 }
@@ -16922,14 +16925,28 @@ function readCredentials() {
     return cache.creds;
   }
   const data = (0, import_fs2.readFileSync)(CREDENTIALS_FILE);
-  if (data.length < 44) {
-    cache = { mtime, creds: {} };
-    return cache.creds;
+  const hasHeader = data.length >= HEADER_SIZE && data.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC);
+  let salt, iv, authTag, encrypted;
+  if (hasHeader) {
+    if (data.length < HEADER_SIZE + 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    const offset = HEADER_SIZE;
+    salt = data.subarray(offset, offset + 16);
+    iv = data.subarray(offset + 16, offset + 28);
+    authTag = data.subarray(offset + 28, offset + 44);
+    encrypted = data.subarray(offset + 44);
+  } else {
+    if (data.length < 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    salt = data.subarray(0, 16);
+    iv = data.subarray(16, 28);
+    authTag = data.subarray(28, 44);
+    encrypted = data.subarray(44);
   }
-  const salt = data.subarray(0, 16);
-  const iv = data.subarray(16, 28);
-  const authTag = data.subarray(28, 44);
-  const encrypted = data.subarray(44);
   try {
     const key = deriveKey(salt);
     const decipher = (0, import_crypto.createDecipheriv)("aes-256-gcm", key, iv);
@@ -16954,7 +16971,7 @@ function writeCredentials(creds) {
   const plaintext = JSON.stringify(creds);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
-  const output = Buffer.concat([salt, iv, authTag, encrypted]);
+  const output = Buffer.concat([FILE_MAGIC, Buffer.from([FILE_VERSION]), salt, iv, authTag, encrypted]);
   (0, import_fs2.writeFileSync)(CREDENTIALS_FILE, output, { mode: 384 });
   cache = { mtime: getFileMtime(), creds };
 }
@@ -17085,41 +17102,65 @@ async function normalizeImage(input) {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// ../vision-analyze-helper/dist/chunk-3GCZ53N5.js
+// ../vision-analyze-helper/dist/chunk-6UTOD4TS.js
 var FETCH_TIMEOUT_MS = 12e4;
-async function analyzeImage(config, params) {
+var GLOBAL_TIMEOUT_MS = 18e4;
+var VisionApiError = class extends Error {
+  status;
+  constructor(status, message) {
+    super(message);
+    this.name = "VisionApiError";
+    this.status = status;
+  }
+};
+function isRetryable(err) {
+  if (err instanceof VisionApiError) {
+    return err.status >= 500 || err.status === 429;
+  }
+  return true;
+}
+async function analyzeImage(config, params, signal) {
   const imageUri = await normalizeImage(params.image);
   const detail = params.detail ?? "high";
   const prompt = params.prompt?.trim() || DEFAULT_PROMPT;
   const url = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: imageUri, detail }
-            }
-          ]
-        }
-      ]
-      // 不传 max_tokens，由各 API 使用自身默认值（不同模型上限不同）
-    }),
-    signal: controller.signal
-  }).finally(() => clearTimeout(timer));
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: imageUri, detail }
+              }
+            ]
+          }
+        ]
+        // 不传 max_tokens，由各 API 使用自身默认值（不同模型上限不同）
+      }),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!resp.ok) {
-    throw new Error(`\u89C6\u89C9\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})`);
+    throw new VisionApiError(resp.status, `\u89C6\u89C9\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})`);
   }
   const data = await resp.json();
   const text = data.choices?.[0]?.message?.content;
@@ -17130,14 +17171,27 @@ async function analyzeImageWithFallback(configs, params) {
   if (configs.length === 0) {
     throw new Error("\u672A\u914D\u7F6E\u4EFB\u4F55\u89C6\u89C9\u6A21\u578B");
   }
+  const globalController = new AbortController();
+  const globalTimer = setTimeout(() => globalController.abort(), GLOBAL_TIMEOUT_MS);
   const errors = [];
-  for (const config of configs) {
-    try {
-      return await analyzeImage(config, params);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
+  try {
+    for (const config of configs) {
+      if (globalController.signal.aborted) {
+        errors.push(`[${config.model} @ ${config.baseUrl}] \u5168\u5C40\u8D85\u65F6\uFF0C\u8DF3\u8FC7`);
+        continue;
+      }
+      try {
+        return await analyzeImage(config, params, globalController.signal);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
+        if (!isRetryable(err) && err instanceof VisionApiError && err.status !== 401) {
+          break;
+        }
+      }
     }
+  } finally {
+    clearTimeout(globalTimer);
   }
   throw new Error(
     `\u6240\u6709\u89C6\u89C9\u6A21\u578B\u5747\u8C03\u7528\u5931\u8D25 (${configs.length} \u4E2A):
@@ -17242,7 +17296,7 @@ function registerVision(program3) {
   });
 }
 
-// ../menubar/dist/balance.js
+// ../shared/dist/balance.js
 var BALANCE_URL = "https://api.deepseek.com/user/balance";
 function formatBalance(s, currency) {
   const n = parseFloat(s);
@@ -18295,7 +18349,7 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.10.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.11.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

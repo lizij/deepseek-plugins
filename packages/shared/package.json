@@ -4,16 +4,23 @@
   "private": true,
   "description": "Shared utilities: cross-platform secure API Key storage via encrypted local file",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/credentials.js",
   "types": "./dist/credentials.d.ts",
   "exports": {
     ".": {
       "types": "./dist/credentials.d.ts",
       "import": "./dist/credentials.js"
+    },
+    "./balance": {
+      "types": "./dist/balance.d.ts",
+      "import": "./dist/balance.js"
     }
   },
   "scripts": {
-    "build": "tsup src/credentials.ts --format esm --dts --clean",
+    "build": "tsup src/credentials.ts src/balance.ts --format esm --dts --clean",
     "dev": "tsup src/credentials.ts --format esm --watch",
     "test": "vitest run"
   },

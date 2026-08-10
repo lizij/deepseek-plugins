@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchBalance } from '../src/balance.js';
 
-// Mock @deepseek-plugins/shared
-vi.mock('@deepseek-plugins/shared', () => ({
+// Mock credentials module (balance.ts imports getKey from ./credentials.js)
+vi.mock('../src/credentials.js', () => ({
   getKey: vi.fn(),
 }));
 
-import { getKey } from '@deepseek-plugins/shared';
+import { getKey } from '../src/credentials.js';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
