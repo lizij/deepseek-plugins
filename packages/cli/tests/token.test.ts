@@ -1,17 +1,19 @@
 import { execSync } from 'node:child_process';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { resolve } from 'node:path';
-import { existsSync, unlinkSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const CLI = resolve(__dirname, '..', 'dist', 'deepseek-plugin-cli');
-const LOG_FILE = join(homedir(), '.deepseek-plugins', 'token-usage.log');
+const TEST_HOME = join(tmpdir(), `cli-token-test-${process.pid}`);
+const DATA_DIR = join(TEST_HOME, '.deepseek-plugins');
 
 function run(args: string, stdin?: string): string {
   const opts: any = {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, HOME: TEST_HOME },
   };
   if (stdin !== undefined) {
     opts.input = stdin;
@@ -19,66 +21,87 @@ function run(args: string, stdin?: string): string {
   return execSync(`${CLI} ${args}`, opts);
 }
 
-function removeLogFile() {
-  if (existsSync(LOG_FILE)) {
-    unlinkSync(LOG_FILE);
-  }
+function writeBuckets(buckets: unknown[]) {
+  mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(join(DATA_DIR, 'token-buckets.json'), JSON.stringify(buckets), 'utf-8');
+}
+
+function mkBucket(over: Record<string, unknown> = {}) {
+  return {
+    bucket_start: new Date().toISOString(),
+    source: 'claude-code',
+    model: 'deepseek-v4-flash',
+    project: 'demo-proj',
+    input_tokens: 1000,
+    output_tokens: 500,
+    cached_input_tokens: 200,
+    cache_creation_input_tokens: 100,
+    reasoning_output_tokens: 50,
+    total_tokens: 1850,
+    rounds: 1,
+    ...over,
+  };
 }
 
 describe('token', () => {
-  beforeEach(() => {
-    removeLogFile();
+  beforeAll(() => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
+    mkdirSync(DATA_DIR, { recursive: true });
   });
 
-  afterEach(() => {
-    removeLogFile();
+  afterAll(() => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
   });
 
   it('token --help 显示子命令', () => {
     const out = run('token --help');
-    expect(out).toContain('log');
+    expect(out).toContain('scan');
+    expect(out).toContain('today');
+    expect(out).toContain('buckets');
     expect(out).toContain('report');
-    expect(out).toContain('Token');
   });
 
-  it('token log 写入模拟 statusline 数据', () => {
-    const json = JSON.stringify({
-      model: 'deepseek-v4-flash',
-      usage: {
-        input_tokens_this_turn: 1234,
-        output_tokens_this_turn: 567,
-      },
-    });
-    run('token log', json);
-    // 验证日志文件存在且包含数据
-    expect(existsSync(LOG_FILE)).toBe(true);
+  it('token scan 无数据源时正常输出', () => {
+    const out = run('token scan');
+    expect(out).toContain('扫描完成');
   });
 
-  it('token report 显示报告', () => {
-    // 模拟多轮对话
-    const rounds = [
-      { model: 'deepseek-v4-flash', usage: { input_tokens_this_turn: 1000, output_tokens_this_turn: 500 } },
-      { model: 'deepseek-v4-flash', usage: { input_tokens_this_turn: 2000, output_tokens_this_turn: 800 } },
-      { model: 'deepseek-v4-pro', usage: { input_tokens_this_turn: 3000, output_tokens_this_turn: 1200 } },
-    ];
+  it('token today 显示汇总', () => {
+    writeBuckets([mkBucket()]);
+    const out = run('token today');
+    expect(out).toContain('今日 Token 用量');
+    expect(out).toContain('推理');
+  });
 
-    for (const round of rounds) {
-      run('token log', JSON.stringify(round));
-    }
+  it('token today --json 输出 JSON（含新增分类字段）', () => {
+    const out = run('token today --json');
+    const json = JSON.parse(out);
+    expect(json.today).toBe(1850);
+    expect(json.today_input).toBe(1000);
+    expect(json.today_output).toBe(500);
+    expect(json.today_cached).toBe(200);
+    expect(json.today_cache_creation).toBe(100);
+    expect(json.today_reasoning).toBe(50);
+    // 拆分字段：单桶场景各 1 项
+    expect(json.by_source).toEqual([{ name: 'claude-code', tokens: 1850 }]);
+    expect(json.by_model).toEqual([{ name: 'deepseek-v4-flash', tokens: 1850 }]);
+  });
 
+  it('token buckets 显示桶数据', () => {
+    const out = run('token buckets');
+    expect(out).toContain('deepseek-v4-flash');
+    expect(out).toContain('1.9K');
+  });
+
+  it('token report 显示按日报告', () => {
     const out = run('token report --days 7');
     expect(out).toContain('Token 用量统计');
-    expect(out).toContain('6.0K');  // 6000 input
-    expect(out).toContain('2.5K');  // 2500 output
-    expect(out).toContain('8.5K');  // 8500 total
-    expect(out).toContain('3');     // 3 rounds
+    expect(out).toContain('1.9K');
   });
 
-  it('token report --clear 清空日志', () => {
-    run('token log', JSON.stringify({ usage: { input_tokens_this_turn: 100, output_tokens_this_turn: 50 } }));
-    expect(existsSync(LOG_FILE)).toBe(true);
-
-    const out = run('token report --clear');
+  it('token report --clear-all 清空数据', () => {
+    const out = run('token report --clear-all');
     expect(out).toContain('已清空');
+    expect(existsSync(join(DATA_DIR, 'token-buckets.json'))).toBe(true);
   });
 });

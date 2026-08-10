@@ -1,8 +1,8 @@
 {
   "name": "@deepseek-plugins/token-counter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Token usage counter via Claude Code statusline integration",
+  "description": "Token usage counter: scan agent logs (Claude Code / Codex / Cursor / opencode) and aggregate by 30-min buckets",
   "type": "module",
   "main": "./dist/counter.js",
   "types": "./dist/counter.d.ts",

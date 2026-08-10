@@ -15,6 +15,17 @@ struct BalanceResult: Codable {
     let balances: [BalanceInfo]
 }
 
+/// Token 用量明细项（按 Agent / 按 Model 拆分）
+struct TokenBreakdownItem: Codable {
+    let name: String
+    let tokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case tokens
+    }
+}
+
 /// Token 用量汇总（对应 `deepseek-plugin-cli token today --json`）
 struct TokenSummary: Codable {
     let today: Int
@@ -24,6 +35,8 @@ struct TokenSummary: Codable {
     let sevenDay: Int
     let allTime: Int
     let updatedAt: String
+    let bySource: [TokenBreakdownItem]
+    let byModel: [TokenBreakdownItem]
 
     enum CodingKeys: String, CodingKey {
         case today
@@ -33,6 +46,8 @@ struct TokenSummary: Codable {
         case sevenDay = "seven_day"
         case allTime = "all_time"
         case updatedAt = "updated_at"
+        case bySource = "by_source"
+        case byModel = "by_model"
     }
 }
 
@@ -53,40 +68,49 @@ final class BalanceManager: ObservableObject {
         fetchBalance()
     }
 
-    /// 调用 deepseek-plugin-cli balance --json 获取余额
+    /// 调用 deepseek-plugin-cli balance --json 获取余额（后台执行，不阻塞主线程）
     func fetchBalance() {
-        let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = [cliPath, "balance", "--json"]
+        let cliPath = self.cliPath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let task = Process()
+            task.launchPath = "/usr/bin/env"
+            task.arguments = [cliPath, "balance", "--json"]
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
 
-        do {
-            try task.run()
-            task.waitUntilExit()
+            do {
+                try task.run()
+                task.waitUntilExit()
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard task.terminationStatus == 0, !data.isEmpty else {
-                balanceText = "查询失败"
-                statusText = "可用状态: 未知"
-                statusColor = .gray
-                return
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard task.terminationStatus == 0, !data.isEmpty else {
+                    DispatchQueue.main.async {
+                        self?.balanceText = "查询失败"
+                        self?.statusText = "可用状态: 未知"
+                        self?.statusColor = .gray
+                    }
+                    return
+                }
+
+                let result = try JSONDecoder().decode(BalanceResult.self, from: data)
+                DispatchQueue.main.async {
+                    if let main = result.balances.first {
+                        self?.balanceText = "总额: \(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"
+                    } else {
+                        self?.balanceText = "总额: 无数据"
+                    }
+                    self?.statusText = "可用状态: \(result.isAvailable ? "✓ 可用" : "⚠ 不可用")"
+                    self?.statusColor = result.isAvailable ? .green : .red
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.balanceText = "查询失败"
+                    self?.statusText = "可用状态: 未知"
+                    self?.statusColor = .gray
+                }
             }
-
-            let result = try JSONDecoder().decode(BalanceResult.self, from: data)
-            if let main = result.balances.first {
-                balanceText = "总额: \(formatBalance(main.totalBalance, currency: main.currency))"
-            } else {
-                balanceText = "总额: 无数据"
-            }
-            statusText = "可用状态: \(result.isAvailable ? "✓ 可用" : "⚠ 不可用")"
-            statusColor = result.isAvailable ? .green : .red
-        } catch {
-            balanceText = "查询失败"
-            statusText = "可用状态: 未知"
-            statusColor = .gray
         }
     }
 
@@ -104,6 +128,8 @@ final class BalanceManager: ObservableObject {
 final class TokenManager: ObservableObject {
     @Published var tokenText: String = "Token: 加载中..."
     @Published var tokenDetail: String = ""
+    @Published var bySource: [TokenBreakdownItem] = []
+    @Published var byModel: [TokenBreakdownItem] = []
 
     private let cliPath: String
 
@@ -115,41 +141,56 @@ final class TokenManager: ObservableObject {
         fetchTokens()
     }
 
-    /// 调用 deepseek-plugin-cli token today --json 获取今日 token 用量
+    /// 调用 deepseek-plugin-cli token today --json 获取今日 token 用量（后台执行，不阻塞主线程）
     func fetchTokens() {
-        // 先增量扫描 agent 日志，确保本地统计数据最新
-        runCLI(arguments: [cliPath, "token", "scan"])
+        let cliPath = self.cliPath
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // 先增量扫描 agent 日志，确保本地统计数据最新
+            self?.runCLI(arguments: [cliPath, "token", "scan"])
 
-        let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = [cliPath, "token", "today", "--json"]
+            let task = Process()
+            task.launchPath = "/usr/bin/env"
+            task.arguments = [cliPath, "token", "today", "--json"]
 
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
 
-        do {
-            try task.run()
-            task.waitUntilExit()
+            do {
+                try task.run()
+                task.waitUntilExit()
 
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard task.terminationStatus == 0, !data.isEmpty else {
-                tokenText = "Token: 无数据"
-                tokenDetail = ""
-                return
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard task.terminationStatus == 0, !data.isEmpty else {
+                    DispatchQueue.main.async {
+                        self?.tokenText = "Token: 无数据"
+                        self?.tokenDetail = ""
+                        self?.bySource = []
+                        self?.byModel = []
+                    }
+                    return
+                }
+
+                let summary = try JSONDecoder().decode(TokenSummary.self, from: data)
+                DispatchQueue.main.async {
+                    self?.tokenText = "今日 Token: \(formatNumber(summary.today))"
+                    var parts: [String] = []
+                    parts.append("输入: \(formatNumber(summary.todayInput))")
+                    parts.append("输出: \(formatNumber(summary.todayOutput))")
+                    parts.append("缓存: \(formatNumber(summary.todayCached))")
+                    parts.append("近7天: \(formatNumber(summary.sevenDay))")
+                    self?.tokenDetail = parts.joined(separator: "  ")
+                    self?.bySource = summary.bySource
+                    self?.byModel = summary.byModel
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.tokenText = "Token: 查询失败"
+                    self?.tokenDetail = ""
+                    self?.bySource = []
+                    self?.byModel = []
+                }
             }
-
-            let summary = try JSONDecoder().decode(TokenSummary.self, from: data)
-            tokenText = "今日 Token: \(formatNumber(summary.today))"
-            var parts: [String] = []
-            parts.append("输入: \(formatNumber(summary.todayInput))")
-            parts.append("输出: \(formatNumber(summary.todayOutput))")
-            parts.append("缓存: \(formatNumber(summary.todayCached))")
-            parts.append("近7天: \(formatNumber(summary.sevenDay))")
-            tokenDetail = parts.joined(separator: "  ")
-        } catch {
-            tokenText = "Token: 查询失败"
-            tokenDetail = ""
         }
     }
 
@@ -167,12 +208,13 @@ final class TokenManager: ObservableObject {
             // 忽略扫描失败，继续尝试读取
         }
     }
+}
 
-    private func formatNumber(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }
-        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
-        return String(n)
-    }
+/// 数字格式化（K/M）
+func formatNumber(_ n: Int) -> String {
+    if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }
+    if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+    return String(n)
 }
 
 /// DeepSeek 插件菜单栏应用
@@ -204,16 +246,31 @@ struct DeepSeekMenuBarApp: App {
 
             Divider()
 
-            // Token 用量，点击跳转 usage
-            Button {
-                if let url = URL(string: "https://platform.deepseek.com/usage") {
-                    NSWorkspace.shared.open(url)
+            // Token 用量（第 1 行）：点击展开按 Agent / 按 Model 明细
+            Menu {
+                if tokenManager.bySource.isEmpty && tokenManager.byModel.isEmpty {
+                    Text("暂无明细")
+                } else {
+                    if !tokenManager.bySource.isEmpty {
+                        Menu("按 Agent") {
+                            ForEach(tokenManager.bySource, id: \.name) { item in
+                                Text("\(item.name): \(formatNumber(item.tokens))")
+                            }
+                        }
+                    }
+                    if !tokenManager.byModel.isEmpty {
+                        Menu("按 Model") {
+                            ForEach(tokenManager.byModel, id: \.name) { item in
+                                Text("\(item.name): \(formatNumber(item.tokens))")
+                            }
+                        }
+                    }
                 }
             } label: {
                 Text(tokenManager.tokenText)
             }
 
-            // Token 明细
+            // Token 明细（输入/输出/缓存/近7天）
             if !tokenManager.tokenDetail.isEmpty {
                 Text(tokenManager.tokenDetail)
                     .font(.system(size: 11))

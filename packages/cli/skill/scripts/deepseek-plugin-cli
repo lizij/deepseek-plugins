@@ -17567,7 +17567,7 @@ var import_node_url2 = require("url");
 var import_node_os3 = require("os");
 
 // ../menubar/macos/DeepSeekMenuBarApp.swift
-var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\n    func fetchBalance() {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "balance", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                statusColor = .gray\n                return\n            }\n\n            let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n            if let main = result.balances.first {\n                balanceText = "\u603B\u989D: \\(formatBalance(main.totalBalance, currency: main.currency))"\n            } else {\n                balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n            }\n            statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n            statusColor = result.isAvailable ? .green : .red\n        } catch {\n            balanceText = "\u67E5\u8BE2\u5931\u8D25"\n            statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n            statusColor = .gray\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\n    func fetchTokens() {\n        // \u5148\u589E\u91CF\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u786E\u4FDD\u672C\u5730\u7EDF\u8BA1\u6570\u636E\u6700\u65B0\n        runCLI(arguments: [cliPath, "token", "scan"])\n\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "token", "today", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                tokenText = "Token: \u65E0\u6570\u636E"\n                tokenDetail = ""\n                return\n            }\n\n            let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n            tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n            var parts: [String] = []\n            parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n            parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n            parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n            parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n            tokenDetail = parts.joined(separator: "  ")\n        } catch {\n            tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n            tokenDetail = ""\n        }\n    }\n\n    /// \u8FD0\u884C CLI \u547D\u4EE4\uFF08\u5FFD\u7565\u8F93\u51FA\uFF0C\u4EC5\u786E\u4FDD\u6267\u884C\u5B8C\u6210\uFF09\n    private func runCLI(arguments: [String]) {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = arguments\n        task.standardOutput = Pipe()\n        task.standardError = Pipe()\n        do {\n            try task.run()\n            task.waitUntilExit()\n        } catch {\n            // \u5FFD\u7565\u626B\u63CF\u5931\u8D25\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u8BFB\u53D6\n        }\n    }\n\n    private func formatNumber(_ n: Int) -> String {\n        if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n        return String(n)\n    }\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
+var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u660E\u7EC6\u9879\uFF08\u6309 Agent / \u6309 Model \u62C6\u5206\uFF09\nstruct TokenBreakdownItem: Codable {\n    let name: String\n    let tokens: Int\n\n    enum CodingKeys: String, CodingKey {\n        case name\n        case tokens\n    }\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n    let bySource: [TokenBreakdownItem]\n    let byModel: [TokenBreakdownItem]\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n        case bySource = "by_source"\n        case byModel = "by_model"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchBalance() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "balance", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                        self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                        self?.statusColor = .gray\n                    }\n                    return\n                }\n\n                let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n                DispatchQueue.main.async {\n                    if let main = result.balances.first {\n                        self?.balanceText = "\u603B\u989D: \\(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"\n                    } else {\n                        self?.balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n                    }\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n                    self?.statusColor = result.isAvailable ? .green : .red\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                    self?.statusColor = .gray\n                }\n            }\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n    @Published var bySource: [TokenBreakdownItem] = []\n    @Published var byModel: [TokenBreakdownItem] = []\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchTokens() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            // \u5148\u589E\u91CF\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u786E\u4FDD\u672C\u5730\u7EDF\u8BA1\u6570\u636E\u6700\u65B0\n            self?.runCLI(arguments: [cliPath, "token", "scan"])\n\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "token", "today", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.tokenText = "Token: \u65E0\u6570\u636E"\n                        self?.tokenDetail = ""\n                        self?.bySource = []\n                        self?.byModel = []\n                    }\n                    return\n                }\n\n                let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n                DispatchQueue.main.async {\n                    self?.tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n                    var parts: [String] = []\n                    parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n                    parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n                    parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n                    parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n                    self?.tokenDetail = parts.joined(separator: "  ")\n                    self?.bySource = summary.bySource\n                    self?.byModel = summary.byModel\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n                    self?.tokenDetail = ""\n                    self?.bySource = []\n                    self?.byModel = []\n                }\n            }\n        }\n    }\n\n    /// \u8FD0\u884C CLI \u547D\u4EE4\uFF08\u5FFD\u7565\u8F93\u51FA\uFF0C\u4EC5\u786E\u4FDD\u6267\u884C\u5B8C\u6210\uFF09\n    private func runCLI(arguments: [String]) {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = arguments\n        task.standardOutput = Pipe()\n        task.standardError = Pipe()\n        do {\n            try task.run()\n            task.waitUntilExit()\n        } catch {\n            // \u5FFD\u7565\u626B\u63CF\u5931\u8D25\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u8BFB\u53D6\n        }\n    }\n}\n\n/// \u6570\u5B57\u683C\u5F0F\u5316\uFF08K/M\uFF09\nfunc formatNumber(_ n: Int) -> String {\n    if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n    if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n    return String(n)\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF08\u7B2C 1 \u884C\uFF09\uFF1A\u70B9\u51FB\u5C55\u5F00\u6309 Agent / \u6309 Model \u660E\u7EC6\n            Menu {\n                if tokenManager.bySource.isEmpty && tokenManager.byModel.isEmpty {\n                    Text("\u6682\u65E0\u660E\u7EC6")\n                } else {\n                    if !tokenManager.bySource.isEmpty {\n                        Menu("\u6309 Agent") {\n                            ForEach(tokenManager.bySource, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                    if !tokenManager.byModel.isEmpty {\n                        Menu("\u6309 Model") {\n                            ForEach(tokenManager.byModel, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\uFF08\u8F93\u5165/\u8F93\u51FA/\u7F13\u5B58/\u8FD17\u5929\uFF09\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
 
 // src/commands/menubar.ts
 var import_meta2 = {};
@@ -17644,13 +17644,18 @@ function registerMenuBar(program3) {
 
 // ../token-counter/dist/counter.js
 var import_fs3 = require("fs");
+var import_crypto2 = require("crypto");
+var import_module = require("module");
 var import_os2 = require("os");
 var import_path3 = require("path");
+var import_meta3 = {};
+var require2 = (0, import_module.createRequire)(import_meta3.url || "file:///noop.js");
 var DATA_DIR = (0, import_path3.join)((0, import_os2.homedir)(), ".deepseek-plugins");
-var LOG_FILE = (0, import_path3.join)(DATA_DIR, "token-usage.log");
 var BUCKET_FILE = (0, import_path3.join)(DATA_DIR, "token-buckets.json");
 var SCAN_META_FILE = (0, import_path3.join)(DATA_DIR, "token-scan-meta.json");
 var BUCKET_MS = 30 * 60 * 1e3;
+var BUCKET_RETENTION_DAYS = 90;
+var RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1e3;
 function ensureDataDir() {
   if (!(0, import_fs3.existsSync)(DATA_DIR)) {
     (0, import_fs3.mkdirSync)(DATA_DIR, { recursive: true, mode: 448 });
@@ -17660,12 +17665,15 @@ function floorToBucket(ts) {
   return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
 }
 function safeParseTime(value) {
-  if (typeof value !== "string" && typeof value !== "number") return Date.now();
+  if (typeof value !== "string" && typeof value !== "number") return null;
   const ts = new Date(value).getTime();
-  return isNaN(ts) ? Date.now() : ts;
+  return isNaN(ts) ? null : ts;
 }
 function bucketKey(bucketStart, source, model, project) {
   return `${bucketStart}|${source}|${model}|${project}`;
+}
+function hashLine(line) {
+  return (0, import_crypto2.createHash)("sha256").update(line).digest("hex");
 }
 function formatNumber(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
@@ -17767,16 +17775,67 @@ function findCursorLogs() {
   return targets;
 }
 function discoverScanTargets() {
-  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs()];
+  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs(), ...findOpenCodeDb()];
 }
-function extractProjectFromPath(filePath, source) {
+function findOpenCodeDb() {
+  const candidates = [
+    (0, import_path3.join)((0, import_os2.homedir)(), ".local", "share", "opencode", "opencode.db")
+  ];
+  const targets = [];
+  for (const p of candidates) {
+    if ((0, import_fs3.existsSync)(p)) targets.push({ path: p, source: "opencode" });
+  }
+  return targets;
+}
+function readTargetLines(target) {
+  if (target.source === "opencode") {
+    return readOpenCodeMessages(target.path);
+  }
+  const content = (0, import_fs3.readFileSync)(target.path, "utf-8");
+  return content.split("\n").filter((l) => l.trim().length > 0);
+}
+function readOpenCodeMessages(dbPath) {
+  try {
+    const { DatabaseSync } = require2("node:sqlite");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const stmt = db.prepare(
+      "SELECT data FROM message WHERE data LIKE ? AND data LIKE ? ORDER BY time_created, id"
+    );
+    const rows = stmt.all('%"role":"assistant"%', '%"tokens"%');
+    db.close();
+    const lines = [];
+    for (const row of rows) {
+      if (typeof row.data === "string") lines.push(row.data);
+    }
+    return lines;
+  } catch {
+    return [];
+  }
+}
+function extractProject(source, filePath, lines) {
   if (source === "claude-code") {
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split("/").filter(Boolean).pop();
+        if (base) return base;
+      }
+    }
     const parts = filePath.split("/");
     const idx = parts.lastIndexOf("projects");
     if (idx >= 0 && idx + 1 < parts.length) {
       const encoded = parts[idx + 1] ?? "";
       const decoded = encoded.replace(/^-/, "").split("-").filter(Boolean);
       return decoded[decoded.length - 1] || "unknown";
+    }
+  }
+  if (source === "opencode") {
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split("/").filter(Boolean).pop();
+        if (base) return base;
+      }
     }
   }
   return "unknown";
@@ -17789,6 +17848,7 @@ function parseClaudeCodeLine(line) {
     if (!msg || !msg.usage) return null;
     const usage = msg.usage;
     const ts = safeParseTime(obj.timestamp);
+    if (ts === null) return null;
     return {
       timestamp: new Date(ts).toISOString(),
       source: "claude-code",
@@ -17812,6 +17872,7 @@ function parseCodexLine(line) {
     const usage = obj.usage || obj.token_usage;
     if (!usage) return null;
     const time = safeParseTime(obj.timestamp || obj.created_at || obj.time);
+    if (time === null) return null;
     return {
       timestamp: new Date(time).toISOString(),
       source: "codex",
@@ -17835,6 +17896,7 @@ function parseCursorLine(line) {
     const usage = obj.usage;
     if (!usage) return null;
     const time = safeParseTime(obj.timestamp || obj.time);
+    if (time === null) return null;
     return {
       timestamp: new Date(time).toISOString(),
       source: "cursor",
@@ -17860,8 +17922,36 @@ function parseLine(line, source) {
       return parseCodexLine(line);
     case "cursor":
       return parseCursorLine(line);
+    case "opencode":
+      return parseOpenCodeLine(line);
     default:
       return null;
+  }
+}
+function parseOpenCodeLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    if (obj.role !== "assistant") return null;
+    const tokens = obj.tokens;
+    if (!tokens) return null;
+    const ts = safeParseTime(obj.time?.created);
+    if (ts === null) return null;
+    const model = [obj.providerID, obj.modelID].filter(Boolean).join("/") || "unknown";
+    return {
+      timestamp: new Date(ts).toISOString(),
+      source: "opencode",
+      model,
+      project: "unknown",
+      usage: {
+        input_tokens: tokens.input || 0,
+        output_tokens: tokens.output || 0,
+        cached_input_tokens: tokens.cache?.read || 0,
+        cache_creation_input_tokens: tokens.cache?.write || 0,
+        reasoning_output_tokens: tokens.reasoning || 0
+      }
+    };
+  } catch {
+    return null;
   }
 }
 function scanAndAggregate() {
@@ -17884,29 +17974,45 @@ function scanAndAggregate() {
       continue;
     }
     const cached = meta.files[target.path];
-    const startLine = cached?.last_line ?? 0;
-    if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
+    if (target.source !== "opencode" && cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
       continue;
     }
     let lines;
     try {
-      const content = (0, import_fs3.readFileSync)(target.path, "utf-8");
-      lines = content.split("\n").filter((l) => l.trim().length > 0);
+      lines = readTargetLines(target);
     } catch {
       continue;
     }
-    const effectiveStart = startLine > lines.length ? 0 : startLine;
-    const newLines = effectiveStart > 0 ? lines.slice(effectiveStart) : lines;
+    let startLine;
+    if (cached?.last_hash && lines.length > 0) {
+      const oldIdx = (cached.last_line ?? 0) - 1;
+      const oldLine = oldIdx >= 0 && oldIdx < lines.length ? lines[oldIdx] : void 0;
+      const prefixIntact = oldLine !== void 0 && hashLine(oldLine) === cached.last_hash;
+      if (prefixIntact) {
+        startLine = (cached.last_line ?? 0) > lines.length ? 0 : cached.last_line ?? 0;
+      } else {
+        const idx = lines.findIndex((l) => hashLine(l) === cached.last_hash);
+        startLine = idx >= 0 ? idx + 1 : 0;
+      }
+    } else {
+      startLine = 0;
+    }
+    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
     if (newLines.length === 0) {
-      meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+      const lastLine2 = lines[lines.length - 1];
+      meta.files[target.path] = {
+        mtime: stat.mtimeMs,
+        size: stat.size,
+        last_line: lines.length,
+        last_hash: lastLine2 !== void 0 ? hashLine(lastLine2) : cached?.last_hash ?? ""
+      };
       continue;
     }
+    const project = extractProject(target.source, target.path, lines);
     for (const line of newLines) {
       const entry = parseLine(line, target.source);
       if (!entry) continue;
-      if (entry.project === "unknown") {
-        entry.project = extractProjectFromPath(target.path, target.source);
-      }
+      entry.project = project;
       newEntries++;
       const ts = new Date(entry.timestamp).getTime();
       const bucketStart = floorToBucket(ts);
@@ -17937,11 +18043,16 @@ function scanAndAggregate() {
         });
       }
     }
-    meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+    const lastProcessed = lines[Math.min(startLine + newLines.length, lines.length) - 1];
+    meta.files[target.path] = {
+      mtime: stat.mtimeMs,
+      size: stat.size,
+      last_line: lines.length,
+      last_hash: lastProcessed ? hashLine(lastProcessed) : cached?.last_hash ?? ""
+    };
   }
-  const allBuckets = Array.from(bucketMap.values()).sort(
-    (a, b) => a.bucket_start.localeCompare(b.bucket_start)
-  );
+  const cutoff = Date.now() - RETENTION_MS;
+  const allBuckets = Array.from(bucketMap.values()).filter((b) => new Date(b.bucket_start).getTime() >= cutoff).sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
   saveBuckets(allBuckets);
   meta.last_scan = (/* @__PURE__ */ new Date()).toISOString();
   saveScanMeta(meta);
@@ -17965,8 +18076,12 @@ function getSummary() {
   let todayInput = 0;
   let todayOutput = 0;
   let todayCached = 0;
+  let todayCacheCreation = 0;
+  let todayReasoning = 0;
   let sevenDay = 0;
   let allTime = 0;
+  const bySourceMap = /* @__PURE__ */ new Map();
+  const byModelMap = /* @__PURE__ */ new Map();
   for (const b of buckets) {
     const ts = new Date(b.bucket_start).getTime();
     allTime += b.total_tokens;
@@ -17976,75 +18091,62 @@ function getSummary() {
       todayInput += b.input_tokens;
       todayOutput += b.output_tokens;
       todayCached += b.cached_input_tokens;
+      todayCacheCreation += b.cache_creation_input_tokens;
+      todayReasoning += b.reasoning_output_tokens;
+      bySourceMap.set(b.source, (bySourceMap.get(b.source) ?? 0) + b.total_tokens);
+      byModelMap.set(b.model, (byModelMap.get(b.model) ?? 0) + b.total_tokens);
     }
   }
+  const toBreakdown = (m) => Array.from(m.entries()).filter(([, tokens]) => tokens > 0).map(([name, tokens]) => ({ name, tokens })).sort((a, b) => b.tokens - a.tokens);
   return {
     today,
     today_input: todayInput,
     today_output: todayOutput,
     today_cached: todayCached,
+    today_cache_creation: todayCacheCreation,
+    today_reasoning: todayReasoning,
     seven_day: sevenDay,
     all_time: allTime,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    by_source: toBreakdown(bySourceMap),
+    by_model: toBreakdown(byModelMap)
   };
 }
-function logUsage(raw) {
-  let input;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  const entry = {
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    model: input.model ?? "unknown",
-    input_tokens: input.usage?.input_tokens_this_turn ?? 0,
-    output_tokens: input.usage?.output_tokens_this_turn ?? 0
-  };
-  ensureDataDir();
-  (0, import_fs3.appendFileSync)(LOG_FILE, JSON.stringify(entry) + "\n", "utf-8");
-  return entry;
-}
-function readEntries() {
-  if (!(0, import_fs3.existsSync)(LOG_FILE)) return [];
-  const content = (0, import_fs3.readFileSync)(LOG_FILE, "utf-8").trim();
-  if (!content) return [];
-  return content.split("\n").map((line) => {
-    try {
-      return JSON.parse(line);
-    } catch {
-      return null;
-    }
-  }).filter((e) => e !== null);
-}
-function generateReport(days) {
+function generateDailyReport(days) {
   if (days <= 0) return [];
-  const entries = readEntries();
+  const buckets = loadBuckets();
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1e3;
-  const filtered = entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
   const dayMap = /* @__PURE__ */ new Map();
-  for (const e of filtered) {
-    const date = e.timestamp.slice(0, 10);
+  for (const b of buckets) {
+    const ts = new Date(b.bucket_start).getTime();
+    if (ts < cutoff) continue;
+    const date = b.bucket_start.slice(0, 10);
     const existing = dayMap.get(date);
     if (existing) {
-      existing.rounds++;
-      existing.input_tokens += e.input_tokens;
-      existing.output_tokens += e.output_tokens;
-      existing.total_tokens += e.input_tokens + e.output_tokens;
+      existing.rounds += b.rounds;
+      existing.input_tokens += b.input_tokens;
+      existing.output_tokens += b.output_tokens;
+      existing.cached_input_tokens += b.cached_input_tokens;
+      existing.cache_creation_input_tokens += b.cache_creation_input_tokens;
+      existing.reasoning_output_tokens += b.reasoning_output_tokens;
+      existing.total_tokens += b.total_tokens;
     } else {
       dayMap.set(date, {
         date,
-        rounds: 1,
-        input_tokens: e.input_tokens,
-        output_tokens: e.output_tokens,
-        total_tokens: e.input_tokens + e.output_tokens
+        rounds: b.rounds,
+        input_tokens: b.input_tokens,
+        output_tokens: b.output_tokens,
+        cached_input_tokens: b.cached_input_tokens,
+        cache_creation_input_tokens: b.cache_creation_input_tokens,
+        reasoning_output_tokens: b.reasoning_output_tokens,
+        total_tokens: b.total_tokens
       });
     }
   }
   return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 function formatReport(days) {
-  const report = generateReport(days);
+  const report = generateDailyReport(days);
   if (report.length === 0) return `\u8FD1 ${days} \u5929\u65E0 token \u7528\u91CF\u8BB0\u5F55\u3002`;
   const lines = [];
   lines.push(`Token \u7528\u91CF\u7EDF\u8BA1 (\u8FD1 ${days} \u5929)`);
@@ -18054,29 +18156,26 @@ function formatReport(days) {
   let totalRounds = 0;
   let totalInput = 0;
   let totalOutput = 0;
+  let totalAll = 0;
   for (const day of report) {
     totalRounds += day.rounds;
     totalInput += day.input_tokens;
     totalOutput += day.output_tokens;
+    totalAll += day.total_tokens;
     lines.push(
       `${day.date}  ${String(day.rounds).padStart(5)}  ${formatNumber(day.input_tokens).padStart(8)}  ${formatNumber(day.output_tokens).padStart(8)}  ${formatNumber(day.total_tokens).padStart(8)}`
     );
   }
   lines.push("\u2500".repeat(55));
   lines.push(
-    `\u5408\u8BA1         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalInput + totalOutput).padStart(8)}`
+    `\u5408\u8BA1         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalAll).padStart(8)}`
   );
   lines.push("");
-  lines.push(`\u65E5\u5FD7\u6587\u4EF6: ${LOG_FILE}`);
+  lines.push(`\u6876\u6570\u636E\u6587\u4EF6: ${BUCKET_FILE}`);
   return lines.join("\n");
-}
-function clearLog() {
-  ensureDataDir();
-  (0, import_fs3.writeFileSync)(LOG_FILE, "", "utf-8");
 }
 function clearAll() {
   ensureDataDir();
-  (0, import_fs3.writeFileSync)(LOG_FILE, "", "utf-8");
   (0, import_fs3.writeFileSync)(BUCKET_FILE, "[]", "utf-8");
   (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: "" }), "utf-8");
 }
@@ -18084,7 +18183,7 @@ function clearAll() {
 // src/commands/token.ts
 function registerToken(program3) {
   const tokenCmd = program3.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u672C\u5730\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u6309 30 \u5206\u949F\u6876\u805A\u5408\uFF09");
-  tokenCmd.command("scan").description("\u626B\u63CF\u672C\u5730 agent \u65E5\u5FD7\uFF08Claude Code / Codex / Cursor\uFF09\uFF0C\u805A\u5408 token \u7528\u91CF").option("--json", "\u8F93\u51FA JSON \u683C\u5F0F").action(async (opts) => {
+  tokenCmd.command("scan").description("\u626B\u63CF\u672C\u5730 agent \u65E5\u5FD7\uFF08Claude Code / Codex / Cursor / opencode\uFF09\uFF0C\u805A\u5408 token \u7528\u91CF").option("--json", "\u8F93\u51FA JSON \u683C\u5F0F").action(async (opts) => {
     const result = scanAndAggregate();
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -18104,6 +18203,8 @@ function registerToken(program3) {
       console.log(`\u8F93\u5165:     ${formatNumber(summary.today_input).padStart(10)}`);
       console.log(`\u8F93\u51FA:     ${formatNumber(summary.today_output).padStart(10)}`);
       console.log(`\u7F13\u5B58:     ${formatNumber(summary.today_cached).padStart(10)}`);
+      console.log(`\u7F13\u5B58\u521B\u5EFA: ${formatNumber(summary.today_cache_creation).padStart(10)}`);
+      console.log(`\u63A8\u7406:     ${formatNumber(summary.today_reasoning).padStart(10)}`);
       console.log("\u2500".repeat(40));
       console.log(`\u8FD1 7 \u5929:   ${formatNumber(summary.seven_day).padStart(10)}`);
       console.log(`\u7D2F\u8BA1:     ${formatNumber(summary.all_time).padStart(10)}`);
@@ -18127,31 +18228,10 @@ function registerToken(program3) {
       );
     }
   });
-  tokenCmd.command("log").description("\u63A5\u6536 statusline JSON\uFF08stdin\uFF09\uFF0C\u5199\u5165\u65E5\u5FD7").action(async () => {
-    const chunks = [];
-    for await (const chunk of process.stdin) {
-      chunks.push(Buffer.from(chunk));
-    }
-    const raw = Buffer.concat(chunks).toString("utf-8").trim();
-    if (!raw) {
-      console.error("\u672A\u6536\u5230 stdin \u6570\u636E");
-      process.exit(1);
-    }
-    const entry = logUsage(raw);
-    if (!entry) {
-      console.error("JSON \u89E3\u6790\u5931\u8D25");
-      process.exit(1);
-    }
-  });
-  tokenCmd.command("report").description("\u751F\u6210\u7528\u91CF\u62A5\u544A\uFF08\u57FA\u4E8E statusline \u65E5\u5FD7\uFF09").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear", "\u6E05\u7A7A\u65E5\u5FD7").option("--clear-all", "\u6E05\u7A7A\u6240\u6709 token \u6570\u636E\uFF08\u6876 + \u626B\u63CF\u5143\u6570\u636E + \u65E5\u5FD7\uFF09").action(async (opts) => {
+  tokenCmd.command("report").description("\u751F\u6210\u6309\u65E5\u7528\u91CF\u62A5\u544A\uFF08\u57FA\u4E8E\u6876\u6570\u636E\uFF09").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear-all", "\u6E05\u7A7A\u6240\u6709 token \u6570\u636E\uFF08\u6876 + \u626B\u63CF\u5143\u6570\u636E\uFF09").action(async (opts) => {
     if (opts.clearAll) {
       clearAll();
       console.log("\u6240\u6709 token \u6570\u636E\u5DF2\u6E05\u7A7A");
-      return;
-    }
-    if (opts.clear) {
-      clearLog();
-      console.log("\u65E5\u5FD7\u5DF2\u6E05\u7A7A");
       return;
     }
     const days = parseInt(opts.days, 10);
@@ -18165,7 +18245,7 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.7.2");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.9.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

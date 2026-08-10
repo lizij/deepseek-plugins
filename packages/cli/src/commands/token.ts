@@ -1,8 +1,6 @@
 import { Command } from 'commander';
 import {
-  logUsage,
   formatReport,
-  clearLog,
   clearAll,
   scanAndAggregate,
   getSummary,
@@ -17,7 +15,7 @@ export function registerToken(program: Command) {
 
   tokenCmd
     .command('scan')
-    .description('扫描本地 agent 日志（Claude Code / Codex / Cursor），聚合 token 用量')
+    .description('扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），聚合 token 用量')
     .option('--json', '输出 JSON 格式')
     .action(async (opts) => {
       const result = scanAndAggregate();
@@ -44,6 +42,8 @@ export function registerToken(program: Command) {
         console.log(`输入:     ${formatNumber(summary.today_input).padStart(10)}`);
         console.log(`输出:     ${formatNumber(summary.today_output).padStart(10)}`);
         console.log(`缓存:     ${formatNumber(summary.today_cached).padStart(10)}`);
+        console.log(`缓存创建: ${formatNumber(summary.today_cache_creation).padStart(10)}`);
+        console.log(`推理:     ${formatNumber(summary.today_reasoning).padStart(10)}`);
         console.log('─'.repeat(40));
         console.log(`近 7 天:   ${formatNumber(summary.seven_day).padStart(10)}`);
         console.log(`累计:     ${formatNumber(summary.all_time).padStart(10)}`);
@@ -74,41 +74,14 @@ export function registerToken(program: Command) {
     });
 
   tokenCmd
-    .command('log')
-    .description('接收 statusline JSON（stdin），写入日志')
-    .action(async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(Buffer.from(chunk));
-      }
-      const raw = Buffer.concat(chunks).toString('utf-8').trim();
-      if (!raw) {
-        console.error('未收到 stdin 数据');
-        process.exit(1);
-      }
-
-      const entry = logUsage(raw);
-      if (!entry) {
-        console.error('JSON 解析失败');
-        process.exit(1);
-      }
-    });
-
-  tokenCmd
     .command('report')
-    .description('生成用量报告（基于 statusline 日志）')
+    .description('生成按日用量报告（基于桶数据）')
     .option('-d, --days <number>', '统计天数', '7')
-    .option('--clear', '清空日志')
-    .option('--clear-all', '清空所有 token 数据（桶 + 扫描元数据 + 日志）')
+    .option('--clear-all', '清空所有 token 数据（桶 + 扫描元数据）')
     .action(async (opts) => {
       if (opts.clearAll) {
         clearAll();
         console.log('所有 token 数据已清空');
-        return;
-      }
-      if (opts.clear) {
-        clearLog();
-        console.log('日志已清空');
         return;
       }
       const days = parseInt(opts.days, 10);

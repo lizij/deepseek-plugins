@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,6 +23,15 @@ function assistantLine(input: number, output: number, ts: string): string {
       role: 'assistant',
       usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, reasoning_output_tokens: 0 },
     },
+  });
+}
+
+function userLineWithCwd(ts: string, cwd: string): string {
+  return JSON.stringify({
+    type: 'user',
+    timestamp: ts,
+    cwd,
+    message: { role: 'user', content: [] },
   });
 }
 
@@ -76,19 +85,31 @@ describe('token-counter 扫描/聚合', () => {
     expect(bucket!.rounds).toBe(3);
   });
 
-  it('文件截断后重新扫描不应重复计数', () => {
-    // 模拟日志轮转：文件被截断为 1 行
-    writeClaudeLog([assistantLine(1000, 500, '2026-08-10T10:00:00.000Z')]);
+  it('文件截断后保留最后已处理行不应重复计数', () => {
+    // 模拟日志轮转：文件被截断，仅保留最后已处理行
+    writeClaudeLog([assistantLine(500, 100, '2026-08-10T10:10:00.000Z')]);
 
-    // 截断后行数 < 上次 last_line，应重置从头解析
     const result = counter.scanAndAggregate();
-    // 截断后只有 1 行，且该行已统计过，但重置后重新解析会再次计入
-    // 这里验证不会因 last_line 变小导致后续重复计数
-    const buckets = counter.getBuckets();
-    const bucket = buckets.find((b) => b.source === 'claude-code');
-    // 截断后重新解析 1 行，input 增加 1000
-    expect(bucket!.input_tokens).toBe(4500);
-    expect(bucket!.rounds).toBe(4);
+    // 截断后仅剩最后已处理行，应通过 last_hash 识别并跳过，不产生新记录
+    expect(result.new_entries).toBe(0);
+
+    const bucket = counter.getBuckets().find((b) => b.source === 'claude-code');
+    expect(bucket!.input_tokens).toBe(3500);
+    expect(bucket!.rounds).toBe(3);
+  });
+
+  it('文件被完全替换为新内容时应从头解析', () => {
+    // 模拟日志轮转：旧内容移除，写入全新的一行
+    writeClaudeLog([assistantLine(700, 300, '2026-08-10T11:00:00.000Z')]);
+
+    const result = counter.scanAndAggregate();
+    expect(result.new_entries).toBe(1);
+
+    const buckets = counter.getBuckets().filter((b) => b.source === 'claude-code');
+    const totalInput = buckets.reduce((s, b) => s + b.input_tokens, 0);
+    const totalRounds = buckets.reduce((s, b) => s + b.rounds, 0);
+    expect(totalInput).toBe(4200);
+    expect(totalRounds).toBe(4);
   });
 
   it('getSummary 应正确汇总今日/近7天/累计', () => {
@@ -99,6 +120,18 @@ describe('token-counter 扫描/聚合', () => {
     expect(summary.seven_day).toBeGreaterThanOrEqual(summary.today);
     expect(summary.all_time).toBeGreaterThanOrEqual(summary.seven_day);
     expect(summary.updated_at).toBeTruthy();
+  });
+
+  it('项目名应从 cwd 提取', () => {
+    counter.clearAll();
+    writeClaudeLog([
+      userLineWithCwd('2026-08-10T12:00:00.000Z', '/Users/me/Projects/ad_base_sdk'),
+      assistantLine(100, 50, '2026-08-10T12:01:00.000Z'),
+    ]);
+    counter.scanAndAggregate();
+    const bucket = counter.getBuckets().find((b) => b.source === 'claude-code');
+    expect(bucket).toBeDefined();
+    expect(bucket!.project).toBe('ad_base_sdk');
   });
 
   it('clearAll 应清空所有数据', () => {

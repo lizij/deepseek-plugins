@@ -1,13 +1,21 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+// node:sqlite 是内置模块，createRequire 仅用于加载它；路径用兜底值兼容 CJS 打包（import.meta.url 可能为 undefined）
+const require = createRequire(import.meta.url || 'file:///noop.js');
+
 const DATA_DIR = join(homedir(), '.deepseek-plugins');
-const LOG_FILE = join(DATA_DIR, 'token-usage.log');
 const BUCKET_FILE = join(DATA_DIR, 'token-buckets.json');
 const SCAN_META_FILE = join(DATA_DIR, 'token-scan-meta.json');
 
 const BUCKET_MS = 30 * 60 * 1000;
+
+/** 桶数据保留天数：超过该时间的桶在扫描保存时裁剪，防止文件无限膨胀 */
+export const BUCKET_RETENTION_DAYS = 90;
+const RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // ─── 类型定义 ───
 
@@ -41,30 +49,23 @@ export interface TokenBucket {
   rounds: number;
 }
 
+export interface TokenBreakdownItem {
+  name: string;
+  tokens: number;
+}
+
 export interface TokenSummary {
   today: number;
   today_input: number;
   today_output: number;
   today_cached: number;
+  today_cache_creation: number;
+  today_reasoning: number;
   seven_day: number;
   all_time: number;
   updated_at: string;
-}
-
-interface StatusLineInput {
-  model?: string;
-  context_window?: { used?: number; total?: number };
-  usage?: {
-    input_tokens_this_turn?: number;
-    output_tokens_this_turn?: number;
-  };
-}
-
-interface LogEntry {
-  timestamp: string;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
+  by_source: TokenBreakdownItem[];
+  by_model: TokenBreakdownItem[];
 }
 
 interface DailyReport {
@@ -72,11 +73,14 @@ interface DailyReport {
   rounds: number;
   input_tokens: number;
   output_tokens: number;
+  cached_input_tokens: number;
+  cache_creation_input_tokens: number;
+  reasoning_output_tokens: number;
   total_tokens: number;
 }
 
 interface ScanMeta {
-  files: Record<string, { mtime: number; size: number; last_line: number }>;
+  files: Record<string, { mtime: number; size: number; last_line: number; last_hash: string }>;
   last_scan: string;
 }
 
@@ -92,14 +96,19 @@ function floorToBucket(ts: number): number {
   return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
 }
 
-function safeParseTime(value: unknown): number {
-  if (typeof value !== 'string' && typeof value !== 'number') return Date.now();
+/** 解析时间戳；无效（含缺失/非法）返回 null */
+function safeParseTime(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
   const ts = new Date(value as string).getTime();
-  return isNaN(ts) ? Date.now() : ts;
+  return isNaN(ts) ? null : ts;
 }
 
 function bucketKey(bucketStart: number, source: string, model: string, project: string): string {
   return `${bucketStart}|${source}|${model}|${project}`;
+}
+
+function hashLine(line: string): string {
+  return createHash('sha256').update(line).digest('hex');
 }
 
 export function formatNumber(n: number): string {
@@ -223,14 +232,72 @@ function findCursorLogs(): ScanTarget[] {
 }
 
 function discoverScanTargets(): ScanTarget[] {
-  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs()];
+  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs(), ...findOpenCodeDb()];
 }
 
-// ─── 解析器：从日志行提取 token 数据 ───
+/** opencode 将 token 数据存在 SQLite（~/.local/share/opencode/opencode.db 的 message 表） */
+function findOpenCodeDb(): ScanTarget[] {
+  const candidates = [
+    join(homedir(), '.local', 'share', 'opencode', 'opencode.db'),
+  ];
+  const targets: ScanTarget[] = [];
+  for (const p of candidates) {
+    if (existsSync(p)) targets.push({ path: p, source: 'opencode' });
+  }
+  return targets;
+}
 
-function extractProjectFromPath(filePath: string, source: string): string {
+/** 读取扫描目标的内容行。opencode 从 SQLite 导出 assistant 消息为 JSON 行，其余按文本文件读取。 */
+function readTargetLines(target: ScanTarget): string[] {
+  if (target.source === 'opencode') {
+    return readOpenCodeMessages(target.path);
+  }
+  const content = readFileSync(target.path, 'utf-8');
+  return content.split('\n').filter((l) => l.trim().length > 0);
+}
+
+/** 从 opencode SQLite 导出含 tokens 的 assistant 消息为 JSON 行（按 time_created, id 排序） */
+function readOpenCodeMessages(dbPath: string): string[] {
+  try {
+    const { DatabaseSync } = require('node:sqlite') as {
+      DatabaseSync: new (path: string, opts?: { readOnly?: boolean }) => {
+        prepare(sql: string): { all(...args: unknown[]): Array<Record<string, unknown>> };
+        close(): void;
+      };
+    };
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const stmt = db.prepare(
+      'SELECT data FROM message WHERE data LIKE ? AND data LIKE ? ORDER BY time_created, id'
+    );
+    const rows = stmt.all('%"role":"assistant"%', '%"tokens"%');
+    db.close();
+    const lines: string[] = [];
+    for (const row of rows) {
+      if (typeof row.data === 'string') lines.push(row.data);
+    }
+    return lines;
+  } catch {
+    return [];
+  }
+}
+
+// ─── 项目名提取 ───
+
+/**
+ * 解析 agent 日志对应的项目名。
+ * claude-code 优先从日志行内嵌的 cwd 取 basename（连字符编码无法还原真实项目名），
+ * 找不到时回退到路径连字符编码启发式。
+ */
+function extractProject(source: string, filePath: string, lines: string[]): string {
   if (source === 'claude-code') {
-    // ~/.claude/projects/<project-encoded>/<session>.jsonl
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split('/').filter(Boolean).pop();
+        if (base) return base;
+      }
+    }
+    // 回退：~/.claude/projects/<encoded>/<session>.jsonl
     const parts = filePath.split('/');
     const idx = parts.lastIndexOf('projects');
     if (idx >= 0 && idx + 1 < parts.length) {
@@ -239,8 +306,19 @@ function extractProjectFromPath(filePath: string, source: string): string {
       return decoded[decoded.length - 1] || 'unknown';
     }
   }
+  if (source === 'opencode') {
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split('/').filter(Boolean).pop();
+        if (base) return base;
+      }
+    }
+  }
   return 'unknown';
 }
+
+// ─── 解析器：从日志行提取 token 数据 ───
 
 function parseClaudeCodeLine(line: string): TokenEntry | null {
   try {
@@ -250,6 +328,7 @@ function parseClaudeCodeLine(line: string): TokenEntry | null {
     if (!msg || !msg.usage) return null;
     const usage = msg.usage;
     const ts = safeParseTime(obj.timestamp);
+    if (ts === null) return null;
     return {
       timestamp: new Date(ts).toISOString(),
       source: 'claude-code',
@@ -274,6 +353,7 @@ function parseCodexLine(line: string): TokenEntry | null {
     const usage = obj.usage || obj.token_usage;
     if (!usage) return null;
     const time = safeParseTime(obj.timestamp || obj.created_at || obj.time);
+    if (time === null) return null;
     return {
       timestamp: new Date(time).toISOString(),
       source: 'codex',
@@ -298,6 +378,7 @@ function parseCursorLine(line: string): TokenEntry | null {
     const usage = obj.usage;
     if (!usage) return null;
     const time = safeParseTime(obj.timestamp || obj.time);
+    if (time === null) return null;
     return {
       timestamp: new Date(time).toISOString(),
       source: 'cursor',
@@ -324,8 +405,38 @@ function parseLine(line: string, source: string): TokenEntry | null {
       return parseCodexLine(line);
     case 'cursor':
       return parseCursorLine(line);
+    case 'opencode':
+      return parseOpenCodeLine(line);
     default:
       return null;
+  }
+}
+
+/** opencode assistant 消息：tokens 字段含 input/output/reasoning/cache.read/cache.write */
+function parseOpenCodeLine(line: string): TokenEntry | null {
+  try {
+    const obj = JSON.parse(line);
+    if (obj.role !== 'assistant') return null;
+    const tokens = obj.tokens;
+    if (!tokens) return null;
+    const ts = safeParseTime(obj.time?.created);
+    if (ts === null) return null;
+    const model = [obj.providerID, obj.modelID].filter(Boolean).join('/') || 'unknown';
+    return {
+      timestamp: new Date(ts).toISOString(),
+      source: 'opencode',
+      model,
+      project: 'unknown',
+      usage: {
+        input_tokens: tokens.input || 0,
+        output_tokens: tokens.output || 0,
+        cached_input_tokens: tokens.cache?.read || 0,
+        cache_creation_input_tokens: tokens.cache?.write || 0,
+        reasoning_output_tokens: tokens.reasoning || 0,
+      },
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -362,38 +473,56 @@ export function scanAndAggregate(): ScanResult {
     }
 
     const cached = meta.files[target.path];
-    const startLine = cached?.last_line ?? 0;
-
-    // 文件未变化则跳过
-    if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
+    // opencode 使用 WAL 模式，主 .db 文件 mtime/size 不随新消息更新，需每次重读
+    if (target.source !== 'opencode' && cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
       continue;
     }
 
     let lines: string[];
     try {
-      const content = readFileSync(target.path, 'utf-8');
-      lines = content.split('\n').filter((l) => l.trim().length > 0);
+      lines = readTargetLines(target);
     } catch {
       continue;
     }
 
-    // 文件被截断/轮转（行数小于上次记录）时，重置为从头解析，避免重复计数
-    const effectiveStart = startLine > lines.length ? 0 : startLine;
+    let startLine: number;
+    if (cached?.last_hash && lines.length > 0) {
+      // 判断旧内容前缀是否完好：上一轮最后已处理行仍位于其在旧文件中的位置
+      const oldIdx = (cached.last_line ?? 0) - 1;
+      const oldLine = oldIdx >= 0 && oldIdx < lines.length ? lines[oldIdx] : undefined;
+      const prefixIntact =
+        oldLine !== undefined && hashLine(oldLine) === cached.last_hash;
+      if (prefixIntact) {
+        // 纯追加：从上次的 last_line 继续增量解析
+        startLine = (cached.last_line ?? 0) > lines.length ? 0 : (cached.last_line ?? 0);
+      } else {
+        // 内容已变化（轮转/替换/截断）：从最后已处理行的下一行恢复，找不到则从头解析
+        const idx = lines.findIndex((l) => hashLine(l) === cached.last_hash);
+        startLine = idx >= 0 ? idx + 1 : 0;
+      }
+    } else {
+      startLine = 0;
+    }
 
-    // 增量：只解析新增行
-    const newLines = effectiveStart > 0 ? lines.slice(effectiveStart) : lines;
+    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
     if (newLines.length === 0) {
-      meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+      const lastLine = lines[lines.length - 1];
+      meta.files[target.path] = {
+        mtime: stat.mtimeMs,
+        size: stat.size,
+        last_line: lines.length,
+        last_hash: lastLine !== undefined ? hashLine(lastLine) : (cached?.last_hash ?? ''),
+      };
       continue;
     }
+
+    const project = extractProject(target.source, target.path, lines);
 
     for (const line of newLines) {
       const entry = parseLine(line, target.source);
       if (!entry) continue;
-      // 从文件路径提取 project（claude-code）
-      if (entry.project === 'unknown') {
-        entry.project = extractProjectFromPath(target.path, target.source);
-      }
+      entry.project = project;
+
       newEntries++;
 
       const ts = new Date(entry.timestamp).getTime();
@@ -436,12 +565,19 @@ export function scanAndAggregate(): ScanResult {
       }
     }
 
-    meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+    const lastProcessed = lines[Math.min(startLine + newLines.length, lines.length) - 1];
+    meta.files[target.path] = {
+      mtime: stat.mtimeMs,
+      size: stat.size,
+      last_line: lines.length,
+      last_hash: lastProcessed ? hashLine(lastProcessed) : (cached?.last_hash ?? ''),
+    };
   }
 
-  const allBuckets = Array.from(bucketMap.values()).sort((a, b) =>
-    a.bucket_start.localeCompare(b.bucket_start)
-  );
+  const cutoff = Date.now() - RETENTION_MS;
+  const allBuckets = Array.from(bucketMap.values())
+    .filter((b) => new Date(b.bucket_start).getTime() >= cutoff)
+    .sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
   saveBuckets(allBuckets);
   meta.last_scan = new Date().toISOString();
   saveScanMeta(meta);
@@ -471,8 +607,13 @@ export function getSummary(): TokenSummary {
   let todayInput = 0;
   let todayOutput = 0;
   let todayCached = 0;
+  let todayCacheCreation = 0;
+  let todayReasoning = 0;
   let sevenDay = 0;
   let allTime = 0;
+
+  const bySourceMap = new Map<string, number>();
+  const byModelMap = new Map<string, number>();
 
   for (const b of buckets) {
     const ts = new Date(b.bucket_start).getTime();
@@ -483,80 +624,65 @@ export function getSummary(): TokenSummary {
       todayInput += b.input_tokens;
       todayOutput += b.output_tokens;
       todayCached += b.cached_input_tokens;
+      todayCacheCreation += b.cache_creation_input_tokens;
+      todayReasoning += b.reasoning_output_tokens;
+      bySourceMap.set(b.source, (bySourceMap.get(b.source) ?? 0) + b.total_tokens);
+      byModelMap.set(b.model, (byModelMap.get(b.model) ?? 0) + b.total_tokens);
     }
   }
+
+  const toBreakdown = (m: Map<string, number>): TokenBreakdownItem[] =>
+    Array.from(m.entries())
+      .filter(([, tokens]) => tokens > 0)
+      .map(([name, tokens]) => ({ name, tokens }))
+      .sort((a, b) => b.tokens - a.tokens);
 
   return {
     today,
     today_input: todayInput,
     today_output: todayOutput,
     today_cached: todayCached,
+    today_cache_creation: todayCacheCreation,
+    today_reasoning: todayReasoning,
     seven_day: sevenDay,
     all_time: allTime,
     updated_at: new Date().toISOString(),
+    by_source: toBreakdown(bySourceMap),
+    by_model: toBreakdown(byModelMap),
   };
 }
 
-// ─── 向后兼容：statusline 日志 ───
+// ─── 报表：基于桶数据 ───
 
-export function logUsage(raw: string): LogEntry | null {
-  let input: StatusLineInput;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    model: input.model ?? 'unknown',
-    input_tokens: input.usage?.input_tokens_this_turn ?? 0,
-    output_tokens: input.usage?.output_tokens_this_turn ?? 0,
-  };
-
-  ensureDataDir();
-  appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n', 'utf-8');
-  return entry;
-}
-
-export function readEntries(): LogEntry[] {
-  if (!existsSync(LOG_FILE)) return [];
-  const content = readFileSync(LOG_FILE, 'utf-8').trim();
-  if (!content) return [];
-  return content
-    .split('\n')
-    .map((line) => {
-      try {
-        return JSON.parse(line) as LogEntry;
-      } catch {
-        return null;
-      }
-    })
-    .filter((e): e is LogEntry => e !== null);
-}
-
-export function generateReport(days: number): DailyReport[] {
+export function generateDailyReport(days: number): DailyReport[] {
   if (days <= 0) return [];
-  const entries = readEntries();
+  const buckets = loadBuckets();
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const filtered = entries.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
 
   const dayMap = new Map<string, DailyReport>();
-  for (const e of filtered) {
-    const date = e.timestamp.slice(0, 10);
+  for (const b of buckets) {
+    const ts = new Date(b.bucket_start).getTime();
+    if (ts < cutoff) continue;
+    const date = b.bucket_start.slice(0, 10);
     const existing = dayMap.get(date);
     if (existing) {
-      existing.rounds++;
-      existing.input_tokens += e.input_tokens;
-      existing.output_tokens += e.output_tokens;
-      existing.total_tokens += e.input_tokens + e.output_tokens;
+      existing.rounds += b.rounds;
+      existing.input_tokens += b.input_tokens;
+      existing.output_tokens += b.output_tokens;
+      existing.cached_input_tokens += b.cached_input_tokens;
+      existing.cache_creation_input_tokens += b.cache_creation_input_tokens;
+      existing.reasoning_output_tokens += b.reasoning_output_tokens;
+      existing.total_tokens += b.total_tokens;
     } else {
       dayMap.set(date, {
         date,
-        rounds: 1,
-        input_tokens: e.input_tokens,
-        output_tokens: e.output_tokens,
-        total_tokens: e.input_tokens + e.output_tokens,
+        rounds: b.rounds,
+        input_tokens: b.input_tokens,
+        output_tokens: b.output_tokens,
+        cached_input_tokens: b.cached_input_tokens,
+        cache_creation_input_tokens: b.cache_creation_input_tokens,
+        reasoning_output_tokens: b.reasoning_output_tokens,
+        total_tokens: b.total_tokens,
       });
     }
   }
@@ -565,7 +691,7 @@ export function generateReport(days: number): DailyReport[] {
 }
 
 export function formatReport(days: number): string {
-  const report = generateReport(days);
+  const report = generateDailyReport(days);
   if (report.length === 0) return `近 ${days} 天无 token 用量记录。`;
 
   const lines: string[] = [];
@@ -577,11 +703,13 @@ export function formatReport(days: number): string {
   let totalRounds = 0;
   let totalInput = 0;
   let totalOutput = 0;
+  let totalAll = 0;
 
   for (const day of report) {
     totalRounds += day.rounds;
     totalInput += day.input_tokens;
     totalOutput += day.output_tokens;
+    totalAll += day.total_tokens;
     lines.push(
       `${day.date}  ${String(day.rounds).padStart(5)}  ${formatNumber(day.input_tokens).padStart(8)}  ${formatNumber(day.output_tokens).padStart(8)}  ${formatNumber(day.total_tokens).padStart(8)}`
     );
@@ -589,23 +717,17 @@ export function formatReport(days: number): string {
 
   lines.push('─'.repeat(55));
   lines.push(
-    `合计         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalInput + totalOutput).padStart(8)}`
+    `合计         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalAll).padStart(8)}`
   );
   lines.push('');
-  lines.push(`日志文件: ${LOG_FILE}`);
+  lines.push(`桶数据文件: ${BUCKET_FILE}`);
 
   return lines.join('\n');
 }
 
-export function clearLog(): void {
-  ensureDataDir();
-  writeFileSync(LOG_FILE, '', 'utf-8');
-}
-
-/** 清空所有 token 数据（桶 + 扫描元数据 + 日志） */
+/** 清空所有 token 数据（桶 + 扫描元数据） */
 export function clearAll(): void {
   ensureDataDir();
-  writeFileSync(LOG_FILE, '', 'utf-8');
   writeFileSync(BUCKET_FILE, '[]', 'utf-8');
   writeFileSync(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: '' }), 'utf-8');
 }
