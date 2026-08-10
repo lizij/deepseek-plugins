@@ -117,6 +117,9 @@ final class TokenManager: ObservableObject {
 
     /// 调用 deepseek-plugin-cli token today --json 获取今日 token 用量
     func fetchTokens() {
+        // 先增量扫描 agent 日志，确保本地统计数据最新
+        runCLI(arguments: [cliPath, "token", "scan"])
+
         let task = Process()
         task.launchPath = "/usr/bin/env"
         task.arguments = [cliPath, "token", "today", "--json"]
@@ -147,6 +150,21 @@ final class TokenManager: ObservableObject {
         } catch {
             tokenText = "Token: 查询失败"
             tokenDetail = ""
+        }
+    }
+
+    /// 运行 CLI 命令（忽略输出，仅确保执行完成）
+    private func runCLI(arguments: [String]) {
+        let task = Process()
+        task.launchPath = "/usr/bin/env"
+        task.arguments = arguments
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            // 忽略扫描失败，继续尝试读取
         }
     }
 

@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.7.0"
+  version: "0.7.1"
 ---
 
 # DeepSeek Plugin Skill
