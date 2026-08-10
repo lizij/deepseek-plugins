@@ -16891,7 +16891,7 @@ var esm_default11 = createPrompt((config, done) => {
   return `${lines}${cursorHide}`;
 });
 
-// ../shared/dist/chunk-IJ6QR7OW.js
+// ../shared/dist/chunk-3PAYRQTL.js
 var import_crypto = require("crypto");
 var import_fs2 = require("fs");
 var import_path = require("path");
@@ -16956,6 +16956,9 @@ function readCredentials() {
     cache = { mtime, creds };
     return creds;
   } catch {
+    console.warn(
+      "\u26A0 \u51ED\u636E\u6587\u4EF6\u89E3\u5BC6\u5931\u8D25\uFF0C\u6240\u6709\u5DF2\u5B58\u50A8\u7684 API Key \u5C06\u4E0D\u53EF\u7528\u3002\u53EF\u80FD\u539F\u56E0\uFF1A\u673A\u5668\u73AF\u5883\u53D8\u5316\uFF08hostname/\u5E73\u53F0/\u67B6\u6784\uFF09\u6216\u6587\u4EF6\u635F\u574F\u3002\u8BF7\u91CD\u65B0\u8FD0\u884C auth set \u914D\u7F6E\u5404\u670D\u52A1\u7684 API Key\u3002"
+    );
     cache = { mtime, creds: {} };
     return cache.creds;
   }
@@ -18349,7 +18352,7 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.11.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.11.1");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);

@@ -9,7 +9,8 @@ deepseek-plugins 是一组围绕 DeepSeek API 的个人辅助工具集合，目�
 包含以下工具：
 
 - **vision-analyze-helper**：辅助识图工具，通过调用第三方视觉模型为 DeepSeek 等纯文本模型补充图片识别能力。
-- **menubar**：原生 macOS 菜单栏应用，在菜单栏实时显示 DeepSeek API 账户余额等信息，无需第三方依赖。
+- **menubar**：原生 macOS 菜单栏应用，在菜单栏实时显示 DeepSeek API 账户余额和 Token 用量等信息，无需第三方依赖。
+- **token-counter**：Token 用量统计工具，扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），按 30 分钟桶聚合 token 消耗。
 
 目标用户：使用 DeepSeek API 进行日常开发的个人用户，尤其是需要识图能力和账户监控的开发者。
 
@@ -26,8 +27,9 @@ deepseek-plugins/
 │   └── env.sh                    # 临时将 release/ 加入 PATH
 └── packages/
     ├── cli/                      # 统一 CLI 入口：deepseek-plugin-cli
-    ├── shared/                   # 共享能力：API Key 本地安全存储
+    ├── shared/                   # 共享能力：API Key 本地安全存储 + 余额查询
     ├── vision-analyze-helper/    # 辅助识图：视觉模型调用 + 跨 agent Skill
+    ├── token-counter/            # Token 用量统计：扫描 agent 日志并按桶聚合
     └── menubar/                  # 通用菜单栏应用（Swift）
 ```
 
@@ -138,6 +140,11 @@ deepseek-plugin-cli vision fallback add --base-url <url> --model <name>  # 添�
 deepseek-plugin-cli vision fallback list    # 列出所有视觉模型
 deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
 deepseek-plugin-cli balance [--json]        # 查询余额
+deepseek-plugin-cli token scan [--json]     # 扫描 agent 日志聚合 token 用量
+deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）
+deepseek-plugin-cli token buckets [-n N]    # 查看最近 N 个桶数据
+deepseek-plugin-cli token report [--days N] # 按日用量报告
+deepseek-plugin-cli token clear             # 清空所有 token 数据
 deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
 deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本

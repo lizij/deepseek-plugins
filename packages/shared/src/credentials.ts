@@ -91,7 +91,12 @@ function readCredentials(): Record<string, string> {
     cache = { mtime, creds };
     return creds;
   } catch {
-    // 解密失败（机器指纹变化或文件损坏）→ 视为空
+    // 解密失败（机器指纹变化或文件损坏）→ 视为空，但警告用户
+    console.warn(
+      '⚠ 凭据文件解密失败，所有已存储的 API Key 将不可用。' +
+      '可能原因：机器环境变化（hostname/平台/架构）或文件损坏。' +
+      '请重新运行 auth set 配置各服务的 API Key。'
+    );
     cache = { mtime, creds: {} };
     return cache.creds;
   }
