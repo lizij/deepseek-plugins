@@ -1,9 +1,9 @@
 ---
 name: deepseek-plugin-skill
 description: |
-  当用户需要识别图片、分析图像内容、查询 DeepSeek API 余额或配置视觉模型时使用此 skill。
-  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图与余额查询能力。
-  通过 scripts/deepseek-plugin-cli 调用视觉模型分析图片，查询 DeepSeek API 账户余额。
+  当用户需要识别图片、分析图像内容、查询 DeepSeek API 余额、统计 token 用量或配置视觉模型时使用此 skill。
+  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、余额查询与 token 用量统计能力。
+  通过 scripts/deepseek-plugin-cli 调用视觉模型分析图片，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
   支持多视觉模型容灾切换。
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
@@ -32,9 +32,22 @@ scripts/deepseek-plugin-cli balance        # 人类可读格式
 scripts/deepseek-plugin-cli balance --json # JSON 格式
 ```
 
-### 3. 菜单栏应用（MenuBar）
+### 3. Token 用量统计（Token Counter）
 
-启动原生 macOS 菜单栏应用，在菜单栏实时显示余额和可用状态，每 10 分钟自动刷新。仅支持 macOS。Swift 源码内嵌于 CLI 单文件，运行时自动编译，独立分发即可用，无需额外文件。
+扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），按 30 分钟桶聚合 token 用量，支持按 Agent / 按 Model 拆分今日消耗。数据存储在本地 `~/.deepseek-plugins/`，无需联网。
+
+```bash
+scripts/deepseek-plugin-cli token scan              # 扫描日志并聚合到桶
+scripts/deepseek-plugin-cli token today             # 今日汇总（人类可读）
+scripts/deepseek-plugin-cli token today --json      # 今日汇总 JSON（含 by_source / by_model 拆分）
+scripts/deepseek-plugin-cli token buckets           # 查看最近桶数据
+scripts/deepseek-plugin-cli token report --days 7   # 按日用量报告
+scripts/deepseek-plugin-cli token report --clear-all # 清空所有 token 数据
+```
+
+### 4. 菜单栏应用（MenuBar）
+
+启动原生 macOS 菜单栏应用，在菜单栏实时显示余额、可用状态和今日 token 用量（按 Agent / 按 Model 拆分），每 10 分钟自动刷新。仅支持 macOS。Swift 源码内嵌于 CLI 单文件，运行时自动编译，独立分发即可用，无需额外文件。
 
 ```bash
 scripts/deepseek-plugin-cli menubar        # 启动菜单栏应用（自动编译）
@@ -77,6 +90,10 @@ scripts/deepseek-plugin-cli vision fallback add --base-url <url> --model <name> 
 scripts/deepseek-plugin-cli vision fallback list    # 列出所有视觉模型
 scripts/deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
 scripts/deepseek-plugin-cli balance [--json]        # 查询余额
+scripts/deepseek-plugin-cli token scan              # 扫描 agent 日志聚合 token
+scripts/deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）
+scripts/deepseek-plugin-cli token buckets           # 查看桶数据
+scripts/deepseek-plugin-cli token report [--days N] # 按日用量报告
 scripts/deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
 ```
 
