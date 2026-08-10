@@ -15,6 +15,27 @@ struct BalanceResult: Codable {
     let balances: [BalanceInfo]
 }
 
+/// Token 用量汇总（对应 `deepseek-plugin-cli token today --json`）
+struct TokenSummary: Codable {
+    let today: Int
+    let todayInput: Int
+    let todayOutput: Int
+    let todayCached: Int
+    let sevenDay: Int
+    let allTime: Int
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case today
+        case todayInput = "today_input"
+        case todayOutput = "today_output"
+        case todayCached = "today_cached"
+        case sevenDay = "seven_day"
+        case allTime = "all_time"
+        case updatedAt = "updated_at"
+    }
+}
+
 /// 余额状态管理
 @MainActor
 final class BalanceManager: ObservableObject {
@@ -26,11 +47,9 @@ final class BalanceManager: ObservableObject {
 
     init(cliPath: String) {
         self.cliPath = cliPath
-        // 定时刷新（每 10 分钟）
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             self?.fetchBalance()
         }
-        // 首次刷新
         fetchBalance()
     }
 
@@ -71,7 +90,6 @@ final class BalanceManager: ObservableObject {
         }
     }
 
-    /// 格式化余额
     private func formatBalance(_ s: String, currency: String) -> String {
         let n = Double(s) ?? 0
         let symbol = currency == "CNY" ? "¥" : currency == "USD" ? "$" : ""
@@ -81,55 +99,121 @@ final class BalanceManager: ObservableObject {
     }
 }
 
+/// Token 用量管理
+@MainActor
+final class TokenManager: ObservableObject {
+    @Published var tokenText: String = "Token: 加载中..."
+    @Published var tokenDetail: String = ""
+
+    private let cliPath: String
+
+    init(cliPath: String) {
+        self.cliPath = cliPath
+        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+            self?.fetchTokens()
+        }
+        fetchTokens()
+    }
+
+    /// 调用 deepseek-plugin-cli token today --json 获取今日 token 用量
+    func fetchTokens() {
+        let task = Process()
+        task.launchPath = "/usr/bin/env"
+        task.arguments = [cliPath, "token", "today", "--json"]
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard task.terminationStatus == 0, !data.isEmpty else {
+                tokenText = "Token: 无数据"
+                tokenDetail = ""
+                return
+            }
+
+            let summary = try JSONDecoder().decode(TokenSummary.self, from: data)
+            tokenText = "今日 Token: \(formatNumber(summary.today))"
+            var parts: [String] = []
+            parts.append("输入: \(formatNumber(summary.todayInput))")
+            parts.append("输出: \(formatNumber(summary.todayOutput))")
+            parts.append("缓存: \(formatNumber(summary.todayCached))")
+            parts.append("近7天: \(formatNumber(summary.sevenDay))")
+            tokenDetail = parts.joined(separator: "  ")
+        } catch {
+            tokenText = "Token: 查询失败"
+            tokenDetail = ""
+        }
+    }
+
+    private func formatNumber(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return String(n)
+    }
+}
+
 /// DeepSeek 插件菜单栏应用
-/// 用法：DeepSeekMenuBar [cli_path]
-/// cli_path 可选，指定 deepseek-plugin-cli 的路径，默认从 PATH 查找
 @main
 struct DeepSeekMenuBarApp: App {
-    /// deepseek-plugin-cli 路径
-    let cliPath: String = {
-        let args = CommandLine.arguments
-        if args.count > 1 {
-            return args[1]
-        }
-        return "deepseek-plugin-cli"
-    }()
-
-    @StateObject private var manager: BalanceManager
+    @StateObject private var balanceManager: BalanceManager
+    @StateObject private var tokenManager: TokenManager
 
     init() {
-        _manager = StateObject(wrappedValue: BalanceManager(cliPath: {
-            let args = CommandLine.arguments
-            return args.count > 1 ? args[1] : "deepseek-plugin-cli"
-        }()))
+        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"
+        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))
+        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))
     }
 
     var body: some Scene {
         MenuBarExtra {
-            // 第1项：余额，点击跳转 usage
+            // 余额，点击跳转 usage
             Button {
                 if let url = URL(string: "https://platform.deepseek.com/usage") {
                     NSWorkspace.shared.open(url)
                 }
             } label: {
-                Text(manager.balanceText)
+                Text(balanceManager.balanceText)
             }
 
-            // 第2项：可用状态
-            Text(manager.statusText)
-                .foregroundStyle(manager.statusColor)
+            // 可用状态
+            Text(balanceManager.statusText)
+                .foregroundStyle(balanceManager.statusColor)
 
             Divider()
 
-            // 第3项：刷新
+            // Token 用量，点击跳转 usage
             Button {
-                manager.fetchBalance()
+                if let url = URL(string: "https://platform.deepseek.com/usage") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Text(tokenManager.tokenText)
+            }
+
+            // Token 明细
+            if !tokenManager.tokenDetail.isEmpty {
+                Text(tokenManager.tokenDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            // 刷新（同时刷新余额和 token）
+            Button {
+                balanceManager.fetchBalance()
+                tokenManager.fetchTokens()
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
             }
             .keyboardShortcut("r")
 
-            // 第4项：退出
+            // 退出
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {

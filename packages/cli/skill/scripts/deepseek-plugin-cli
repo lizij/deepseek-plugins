@@ -17567,7 +17567,7 @@ var import_node_url2 = require("url");
 var import_node_os3 = require("os");
 
 // ../menubar/macos/DeepSeekMenuBarApp.swift
-var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        // \u5B9A\u65F6\u5237\u65B0\uFF08\u6BCF 10 \u5206\u949F\uFF09\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        // \u9996\u6B21\u5237\u65B0\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\n    func fetchBalance() {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "balance", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                statusColor = .gray\n                return\n            }\n\n            let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n            if let main = result.balances.first {\n                balanceText = "\u603B\u989D: \\(formatBalance(main.totalBalance, currency: main.currency))"\n            } else {\n                balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n            }\n            statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n            statusColor = result.isAvailable ? .green : .red\n        } catch {\n            balanceText = "\u67E5\u8BE2\u5931\u8D25"\n            statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n            statusColor = .gray\n        }\n    }\n\n    /// \u683C\u5F0F\u5316\u4F59\u989D\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n/// \u7528\u6CD5\uFF1ADeepSeekMenuBar [cli_path]\n/// cli_path \u53EF\u9009\uFF0C\u6307\u5B9A deepseek-plugin-cli \u7684\u8DEF\u5F84\uFF0C\u9ED8\u8BA4\u4ECE PATH \u67E5\u627E\n@main\nstruct DeepSeekMenuBarApp: App {\n    /// deepseek-plugin-cli \u8DEF\u5F84\n    let cliPath: String = {\n        let args = CommandLine.arguments\n        if args.count > 1 {\n            return args[1]\n        }\n        return "deepseek-plugin-cli"\n    }()\n\n    @StateObject private var manager: BalanceManager\n\n    init() {\n        _manager = StateObject(wrappedValue: BalanceManager(cliPath: {\n            let args = CommandLine.arguments\n            return args.count > 1 ? args[1] : "deepseek-plugin-cli"\n        }()))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u7B2C1\u9879\uFF1A\u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(manager.balanceText)\n            }\n\n            // \u7B2C2\u9879\uFF1A\u53EF\u7528\u72B6\u6001\n            Text(manager.statusText)\n                .foregroundStyle(manager.statusColor)\n\n            Divider()\n\n            // \u7B2C3\u9879\uFF1A\u5237\u65B0\n            Button {\n                manager.fetchBalance()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u7B2C4\u9879\uFF1A\u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
+var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\n    func fetchBalance() {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "balance", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                statusColor = .gray\n                return\n            }\n\n            let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n            if let main = result.balances.first {\n                balanceText = "\u603B\u989D: \\(formatBalance(main.totalBalance, currency: main.currency))"\n            } else {\n                balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n            }\n            statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n            statusColor = result.isAvailable ? .green : .red\n        } catch {\n            balanceText = "\u67E5\u8BE2\u5931\u8D25"\n            statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n            statusColor = .gray\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\n    func fetchTokens() {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = [cliPath, "token", "today", "--json"]\n\n        let pipe = Pipe()\n        task.standardOutput = pipe\n        task.standardError = Pipe()\n\n        do {\n            try task.run()\n            task.waitUntilExit()\n\n            let data = pipe.fileHandleForReading.readDataToEndOfFile()\n            guard task.terminationStatus == 0, !data.isEmpty else {\n                tokenText = "Token: \u65E0\u6570\u636E"\n                tokenDetail = ""\n                return\n            }\n\n            let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n            tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n            var parts: [String] = []\n            parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n            parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n            parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n            parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n            tokenDetail = parts.joined(separator: "  ")\n        } catch {\n            tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n            tokenDetail = ""\n        }\n    }\n\n    private func formatNumber(_ n: Int) -> String {\n        if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n        return String(n)\n    }\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
 
 // src/commands/menubar.ts
 var import_meta2 = {};
@@ -17648,10 +17648,344 @@ var import_os2 = require("os");
 var import_path3 = require("path");
 var DATA_DIR = (0, import_path3.join)((0, import_os2.homedir)(), ".deepseek-plugins");
 var LOG_FILE = (0, import_path3.join)(DATA_DIR, "token-usage.log");
+var BUCKET_FILE = (0, import_path3.join)(DATA_DIR, "token-buckets.json");
+var SCAN_META_FILE = (0, import_path3.join)(DATA_DIR, "token-scan-meta.json");
+var BUCKET_MS = 30 * 60 * 1e3;
 function ensureDataDir() {
   if (!(0, import_fs3.existsSync)(DATA_DIR)) {
     (0, import_fs3.mkdirSync)(DATA_DIR, { recursive: true, mode: 448 });
   }
+}
+function floorToBucket(ts) {
+  return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
+}
+function safeParseTime(value) {
+  if (typeof value !== "string" && typeof value !== "number") return Date.now();
+  const ts = new Date(value).getTime();
+  return isNaN(ts) ? Date.now() : ts;
+}
+function bucketKey(bucketStart, source, model, project) {
+  return `${bucketStart}|${source}|${model}|${project}`;
+}
+function formatNumber(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function loadBuckets() {
+  if (!(0, import_fs3.existsSync)(BUCKET_FILE)) return [];
+  try {
+    const raw = (0, import_fs3.readFileSync)(BUCKET_FILE, "utf-8");
+    if (!raw.trim()) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+function saveBuckets(buckets) {
+  ensureDataDir();
+  (0, import_fs3.writeFileSync)(BUCKET_FILE, JSON.stringify(buckets), "utf-8");
+}
+function loadScanMeta() {
+  if (!(0, import_fs3.existsSync)(SCAN_META_FILE)) return { files: {}, last_scan: "" };
+  try {
+    return JSON.parse((0, import_fs3.readFileSync)(SCAN_META_FILE, "utf-8"));
+  } catch {
+    return { files: {}, last_scan: "" };
+  }
+}
+function saveScanMeta(meta) {
+  ensureDataDir();
+  (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify(meta), "utf-8");
+}
+function findClaudeCodeLogs() {
+  const base = (0, import_path3.join)((0, import_os2.homedir)(), ".claude", "projects");
+  if (!(0, import_fs3.existsSync)(base)) return [];
+  const targets = [];
+  const walk = (dir) => {
+    const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const full = (0, import_path3.join)(dir, e.name);
+      if (e.isDirectory()) {
+        walk(full);
+      } else if (e.name.endsWith(".jsonl")) {
+        targets.push({ path: full, source: "claude-code" });
+      }
+    }
+  };
+  try {
+    walk(base);
+  } catch {
+  }
+  return targets;
+}
+function findCodexLogs() {
+  const candidates = [
+    (0, import_path3.join)((0, import_os2.homedir)(), ".codex", "logs"),
+    (0, import_path3.join)((0, import_os2.homedir)(), ".config", "codex", "logs")
+  ];
+  const targets = [];
+  for (const dir of candidates) {
+    if (!(0, import_fs3.existsSync)(dir)) continue;
+    try {
+      const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
+          targets.push({ path: (0, import_path3.join)(dir, e.name), source: "codex" });
+        }
+      }
+    } catch {
+    }
+  }
+  return targets;
+}
+function findCursorLogs() {
+  const base = (0, import_path3.join)((0, import_os2.homedir)(), "Library", "Application Support", "Cursor", "logs");
+  if (!(0, import_fs3.existsSync)(base)) return [];
+  const targets = [];
+  try {
+    const entries = (0, import_fs3.readdirSync)(base, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        const sub = (0, import_path3.join)(base, e.name);
+        try {
+          const subEntries = (0, import_fs3.readdirSync)(sub, { withFileTypes: true });
+          for (const se of subEntries) {
+            if (se.name.endsWith(".jsonl") || se.name.endsWith(".log")) {
+              targets.push({ path: (0, import_path3.join)(sub, se.name), source: "cursor" });
+            }
+          }
+        } catch {
+        }
+      } else if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
+        targets.push({ path: (0, import_path3.join)(base, e.name), source: "cursor" });
+      }
+    }
+  } catch {
+  }
+  return targets;
+}
+function discoverScanTargets() {
+  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs()];
+}
+function extractProjectFromPath(filePath, source) {
+  if (source === "claude-code") {
+    const parts = filePath.split("/");
+    const idx = parts.lastIndexOf("projects");
+    if (idx >= 0 && idx + 1 < parts.length) {
+      const encoded = parts[idx + 1] ?? "";
+      const decoded = encoded.replace(/^-/, "").split("-").filter(Boolean);
+      return decoded[decoded.length - 1] || "unknown";
+    }
+  }
+  return "unknown";
+}
+function parseClaudeCodeLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    if (obj.type !== "assistant") return null;
+    const msg = obj.message;
+    if (!msg || !msg.usage) return null;
+    const usage = msg.usage;
+    const ts = safeParseTime(obj.timestamp);
+    return {
+      timestamp: new Date(ts).toISOString(),
+      source: "claude-code",
+      model: msg.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || 0,
+        output_tokens: usage.output_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseCodexLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    const usage = obj.usage || obj.token_usage;
+    if (!usage) return null;
+    const time = safeParseTime(obj.timestamp || obj.created_at || obj.time);
+    return {
+      timestamp: new Date(time).toISOString(),
+      source: "codex",
+      model: obj.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || usage.prompt_tokens || 0,
+        output_tokens: usage.output_tokens || usage.completion_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseCursorLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    const usage = obj.usage;
+    if (!usage) return null;
+    const time = safeParseTime(obj.timestamp || obj.time);
+    return {
+      timestamp: new Date(time).toISOString(),
+      source: "cursor",
+      model: obj.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || 0,
+        output_tokens: usage.output_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseLine(line, source) {
+  switch (source) {
+    case "claude-code":
+      return parseClaudeCodeLine(line);
+    case "codex":
+      return parseCodexLine(line);
+    case "cursor":
+      return parseCursorLine(line);
+    default:
+      return null;
+  }
+}
+function scanAndAggregate() {
+  ensureDataDir();
+  const targets = discoverScanTargets();
+  const meta = loadScanMeta();
+  const buckets = loadBuckets();
+  const bucketMap = /* @__PURE__ */ new Map();
+  for (const b of buckets) {
+    bucketMap.set(bucketKey(new Date(b.bucket_start).getTime(), b.source, b.model, b.project), b);
+  }
+  let newEntries = 0;
+  const sources = /* @__PURE__ */ new Set();
+  for (const target of targets) {
+    sources.add(target.source);
+    let stat;
+    try {
+      stat = (0, import_fs3.statSync)(target.path);
+    } catch {
+      continue;
+    }
+    const cached = meta.files[target.path];
+    const startLine = cached?.last_line ?? 0;
+    if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
+      continue;
+    }
+    let lines;
+    try {
+      const content = (0, import_fs3.readFileSync)(target.path, "utf-8");
+      lines = content.split("\n").filter((l) => l.trim().length > 0);
+    } catch {
+      continue;
+    }
+    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
+    if (newLines.length === 0) {
+      meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+      continue;
+    }
+    for (const line of newLines) {
+      const entry = parseLine(line, target.source);
+      if (!entry) continue;
+      if (entry.project === "unknown") {
+        entry.project = extractProjectFromPath(target.path, target.source);
+      }
+      newEntries++;
+      const ts = new Date(entry.timestamp).getTime();
+      const bucketStart = floorToBucket(ts);
+      const key = bucketKey(bucketStart, entry.source, entry.model, entry.project);
+      const existing = bucketMap.get(key);
+      if (existing) {
+        existing.input_tokens += entry.usage.input_tokens;
+        existing.output_tokens += entry.usage.output_tokens;
+        existing.cached_input_tokens += entry.usage.cached_input_tokens;
+        existing.cache_creation_input_tokens += entry.usage.cache_creation_input_tokens;
+        existing.reasoning_output_tokens += entry.usage.reasoning_output_tokens;
+        existing.total_tokens += entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
+        existing.rounds += 1;
+      } else {
+        const total = entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
+        bucketMap.set(key, {
+          bucket_start: new Date(bucketStart).toISOString(),
+          source: entry.source,
+          model: entry.model,
+          project: entry.project,
+          input_tokens: entry.usage.input_tokens,
+          output_tokens: entry.usage.output_tokens,
+          cached_input_tokens: entry.usage.cached_input_tokens,
+          cache_creation_input_tokens: entry.usage.cache_creation_input_tokens,
+          reasoning_output_tokens: entry.usage.reasoning_output_tokens,
+          total_tokens: total,
+          rounds: 1
+        });
+      }
+    }
+    meta.files[target.path] = { mtime: stat.mtimeMs, size: stat.size, last_line: lines.length };
+  }
+  const allBuckets = Array.from(bucketMap.values()).sort(
+    (a, b) => a.bucket_start.localeCompare(b.bucket_start)
+  );
+  saveBuckets(allBuckets);
+  meta.last_scan = (/* @__PURE__ */ new Date()).toISOString();
+  saveScanMeta(meta);
+  return {
+    scanned: targets.length,
+    new_entries: newEntries,
+    total_buckets: allBuckets.length,
+    sources: Array.from(sources)
+  };
+}
+function getBuckets() {
+  return loadBuckets();
+}
+function getSummary() {
+  const buckets = loadBuckets();
+  const now = Date.now();
+  const todayStart = /* @__PURE__ */ new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1e3;
+  let today = 0;
+  let todayInput = 0;
+  let todayOutput = 0;
+  let todayCached = 0;
+  let sevenDay = 0;
+  let allTime = 0;
+  for (const b of buckets) {
+    const ts = new Date(b.bucket_start).getTime();
+    allTime += b.total_tokens;
+    if (ts >= sevenDaysAgo) sevenDay += b.total_tokens;
+    if (ts >= todayStart.getTime()) {
+      today += b.total_tokens;
+      todayInput += b.input_tokens;
+      todayOutput += b.output_tokens;
+      todayCached += b.cached_input_tokens;
+    }
+  }
+  return {
+    today,
+    today_input: todayInput,
+    today_output: todayOutput,
+    today_cached: todayCached,
+    seven_day: sevenDay,
+    all_time: allTime,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
 }
 function logUsage(raw) {
   let input;
@@ -17708,11 +18042,6 @@ function generateReport(days) {
   }
   return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
-function formatNumber(n) {
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
-  return String(n);
-}
 function formatReport(days) {
   const report = generateReport(days);
   if (report.length === 0) return `\u8FD1 ${days} \u5929\u65E0 token \u7528\u91CF\u8BB0\u5F55\u3002`;
@@ -17744,10 +18073,59 @@ function clearLog() {
   ensureDataDir();
   (0, import_fs3.writeFileSync)(LOG_FILE, "", "utf-8");
 }
+function clearAll() {
+  ensureDataDir();
+  (0, import_fs3.writeFileSync)(LOG_FILE, "", "utf-8");
+  (0, import_fs3.writeFileSync)(BUCKET_FILE, "[]", "utf-8");
+  (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: "" }), "utf-8");
+}
 
 // src/commands/token.ts
 function registerToken(program3) {
-  const tokenCmd = program3.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u57FA\u4E8E Claude Code statusline \u6570\u636E\uFF09");
+  const tokenCmd = program3.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u672C\u5730\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u6309 30 \u5206\u949F\u6876\u805A\u5408\uFF09");
+  tokenCmd.command("scan").description("\u626B\u63CF\u672C\u5730 agent \u65E5\u5FD7\uFF08Claude Code / Codex / Cursor\uFF09\uFF0C\u805A\u5408 token \u7528\u91CF").option("--json", "\u8F93\u51FA JSON \u683C\u5F0F").action(async (opts) => {
+    const result = scanAndAggregate();
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`\u626B\u63CF\u5B8C\u6210: ${result.scanned} \u4E2A\u6587\u4EF6, \u65B0\u589E ${result.new_entries} \u6761\u8BB0\u5F55, \u5171 ${result.total_buckets} \u4E2A\u6876`);
+      console.log(`\u6570\u636E\u6E90: ${result.sources.join(", ") || "\u65E0"}`);
+    }
+  });
+  tokenCmd.command("today").description("\u663E\u793A\u4ECA\u65E5 token \u7528\u91CF\u6C47\u603B").option("--json", "\u8F93\u51FA JSON \u683C\u5F0F\uFF08\u4F9B\u83DC\u5355\u680F\u4F7F\u7528\uFF09").action(async (opts) => {
+    const summary = getSummary();
+    if (opts.json) {
+      console.log(JSON.stringify(summary, null, 2));
+    } else {
+      console.log("\u4ECA\u65E5 Token \u7528\u91CF");
+      console.log("\u2500".repeat(40));
+      console.log(`\u603B\u8BA1:     ${formatNumber(summary.today).padStart(10)}`);
+      console.log(`\u8F93\u5165:     ${formatNumber(summary.today_input).padStart(10)}`);
+      console.log(`\u8F93\u51FA:     ${formatNumber(summary.today_output).padStart(10)}`);
+      console.log(`\u7F13\u5B58:     ${formatNumber(summary.today_cached).padStart(10)}`);
+      console.log("\u2500".repeat(40));
+      console.log(`\u8FD1 7 \u5929:   ${formatNumber(summary.seven_day).padStart(10)}`);
+      console.log(`\u7D2F\u8BA1:     ${formatNumber(summary.all_time).padStart(10)}`);
+      console.log(`\u66F4\u65B0\u65F6\u95F4: ${summary.updated_at}`);
+    }
+  });
+  tokenCmd.command("buckets").description("\u67E5\u770B\u6700\u8FD1\u7684 token \u6876\u6570\u636E").option("-n, --limit <number>", "\u663E\u793A\u6700\u8FD1 N \u4E2A\u6876", "20").action(async (opts) => {
+    const buckets = getBuckets();
+    const limit = parseInt(opts.limit, 10) || 20;
+    const recent = buckets.slice(-limit).reverse();
+    if (recent.length === 0) {
+      console.log("\u6682\u65E0\u6876\u6570\u636E\uFF0C\u8BF7\u5148\u6267\u884C: deepseek-plugin-cli token scan");
+      return;
+    }
+    console.log("\u65F6\u95F4                  \u6765\u6E90          \u6A21\u578B                    \u8F93\u5165      \u8F93\u51FA      \u7F13\u5B58      \u603B\u8BA1");
+    console.log("\u2500".repeat(100));
+    for (const b of recent) {
+      const time = b.bucket_start.replace("T", " ").replace(":00.000Z", "");
+      console.log(
+        `${time}  ${b.source.padEnd(12)}  ${b.model.padEnd(20)}  ${formatNumber(b.input_tokens).padStart(6)}  ${formatNumber(b.output_tokens).padStart(6)}  ${formatNumber(b.cached_input_tokens).padStart(6)}  ${formatNumber(b.total_tokens).padStart(8)}`
+      );
+    }
+  });
   tokenCmd.command("log").description("\u63A5\u6536 statusline JSON\uFF08stdin\uFF09\uFF0C\u5199\u5165\u65E5\u5FD7").action(async () => {
     const chunks = [];
     for await (const chunk of process.stdin) {
@@ -17764,7 +18142,12 @@ function registerToken(program3) {
       process.exit(1);
     }
   });
-  tokenCmd.command("report").description("\u751F\u6210\u7528\u91CF\u62A5\u544A").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear", "\u6E05\u7A7A\u65E5\u5FD7").action(async (opts) => {
+  tokenCmd.command("report").description("\u751F\u6210\u7528\u91CF\u62A5\u544A\uFF08\u57FA\u4E8E statusline \u65E5\u5FD7\uFF09").option("-d, --days <number>", "\u7EDF\u8BA1\u5929\u6570", "7").option("--clear", "\u6E05\u7A7A\u65E5\u5FD7").option("--clear-all", "\u6E05\u7A7A\u6240\u6709 token \u6570\u636E\uFF08\u6876 + \u626B\u63CF\u5143\u6570\u636E + \u65E5\u5FD7\uFF09").action(async (opts) => {
+    if (opts.clearAll) {
+      clearAll();
+      console.log("\u6240\u6709 token \u6570\u636E\u5DF2\u6E05\u7A7A");
+      return;
+    }
     if (opts.clear) {
       clearLog();
       console.log("\u65E5\u5FD7\u5DF2\u6E05\u7A7A");
@@ -17781,7 +18164,7 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.6.0");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.7.0");
 registerAuth(program2);
 registerVision(program2);
 registerBalance(program2);
