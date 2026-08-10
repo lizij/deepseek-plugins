@@ -90,10 +90,10 @@ export function registerVision(program: Command) {
         return;
       }
       console.log('已配置的视觉模型 (按优先级排列):\n');
-      for (let i = 0; i < configs.length; i++) {
+      configs.forEach((cfg, i) => {
         const label = i === 0 ? '主模型' : `备选 #${i - 1}`;
-        console.log(`  [${label}] ${configs[i].model} @ ${configs[i].baseUrl}`);
-      }
+        console.log(`  [${label}] ${cfg.model} @ ${cfg.baseUrl}`);
+      });
     });
 
   fallback

@@ -17258,10 +17258,10 @@ function registerVision(program3) {
       return;
     }
     console.log("\u5DF2\u914D\u7F6E\u7684\u89C6\u89C9\u6A21\u578B (\u6309\u4F18\u5148\u7EA7\u6392\u5217):\n");
-    for (let i = 0; i < configs.length; i++) {
+    configs.forEach((cfg, i) => {
       const label = i === 0 ? "\u4E3B\u6A21\u578B" : `\u5907\u9009 #${i - 1}`;
-      console.log(`  [${label}] ${configs[i].model} @ ${configs[i].baseUrl}`);
-    }
+      console.log(`  [${label}] ${cfg.model} @ ${cfg.baseUrl}`);
+    });
   });
   fallback.command("remove <index>").description("\u5220\u9664\u6307\u5B9A\u7D22\u5F15\u7684\u5907\u9009\u6A21\u578B\uFF0C\u5E76\u91CD\u6392\u540E\u7EED\u7D22\u5F15\u907F\u514D\u7A7A\u6D1E").action(async (indexStr) => {
     const idx = parseInt(indexStr, 10);
