@@ -14,6 +14,13 @@ import { registerToken } from './commands/token.js';
 import { registerGui } from './commands/gui.js';
 import { registerService } from './commands/service.js';
 
+// Node.js 版本检查（双重保险：banner 的 sh 层已检查，此处覆盖直接用 node 执行的情况）
+const _nodeMajor = parseInt(process.versions.node.split('.')[0] ?? '0', 10);
+if (_nodeMajor < 20) {
+  console.error(`❌ Node.js 版本过低（当前 v${process.version}），需要 20+，请升级后重试`);
+  process.exit(1);
+}
+
 // 隐藏入口：作为后台共享服务常驻运行（由 gui/menubar 命令以 detached 方式 spawn）
 if (process.argv[2] === '__daemon') {
   runAsDaemon().catch((err) => {

@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.15.0"
+  version: "0.16.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -78,6 +78,16 @@ scripts/deepseek-plugin-cli menubar --build # 强制重新编译
 ```
 
 ## 前置配置
+
+### 环境要求
+
+本 skill 依赖 `Node.js 20+`。首次使用前请先确认环境：
+
+```bash
+node --version  # 需 >= v20.0.0
+```
+
+若未安装 Node.js 或版本过低，请先安装/升级：https://nodejs.org
 
 所有子能力共用 `deepseek-plugin-cli`，首次使用前需一次性配置：
 

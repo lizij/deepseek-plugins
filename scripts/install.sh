@@ -5,6 +5,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 build() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "❌ 未检测到 Node.js。构建需要 Node.js 20+，请安装：https://nodejs.org" >&2
+    exit 1
+  fi
+  local node_major
+  node_major=$(node -p "parseInt(process.versions.node.split('.')[0])")
+  if [ "$node_major" -lt 20 ]; then
+    echo "❌ Node.js 版本过低（当前 v$(node -v)），构建需要 20+，请升级后重试" >&2
+    exit 1
+  fi
   echo "==> 构建项目..."
   cd "$PROJECT_DIR" && pnpm install && pnpm -r build
 }
