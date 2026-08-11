@@ -14490,7 +14490,7 @@ var {
 } = import_index.default;
 
 // package.json
-var version = "0.14.0";
+var version = "0.15.0";
 
 // src/gui/constants.ts
 var import_node_os = require("os");
