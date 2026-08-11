@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setKey, getKey, unsetKey, listServices, clearCache } from '../src/credentials.js';
+import { setKey, getKey, getKeys, unsetKey, listServices, updateCredentials, clearCache } from '../src/credentials.js';
 
 // 内存文件系统模拟
 let fsStore: Record<string, Buffer> = {};
@@ -116,6 +116,54 @@ describe('credentials', () => {
       const writeCall = vi.mocked(writeFileSync).mock.calls[0];
       const data = writeCall[1] as Buffer;
       expect(data.toString()).not.toContain('secret-api-key');
+    });
+  });
+
+  describe('getKeys', () => {
+    it('批量读取多个 service 的 key', async () => {
+      await setKey('svc1', 'k1');
+      await setKey('svc2', 'k2');
+      const result = await getKeys(['svc1', 'svc2', 'nonexistent']);
+      expect(result).toEqual({ svc1: 'k1', svc2: 'k2', nonexistent: null });
+    });
+
+    it('空数组返回空对象', async () => {
+      const result = await getKeys([]);
+      expect(result).toEqual({});
+    });
+  });
+
+  describe('updateCredentials', () => {
+    it('批量新增多个凭据（单次写入）', async () => {
+      const { writeFileSync } = await import('node:fs');
+      await updateCredentials((creds) => {
+        creds['svc1'] = 'k1';
+        creds['svc2'] = 'k2';
+      });
+      // 只应触发一次写入
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+      expect(await getKey('svc1')).toBe('k1');
+      expect(await getKey('svc2')).toBe('k2');
+    });
+
+    it('批量删除凭据后清空文件', async () => {
+      const { unlinkSync } = await import('node:fs');
+      await setKey('svc1', 'k1');
+      await updateCredentials((creds) => {
+        delete creds['svc1'];
+      });
+      expect(unlinkSync).toHaveBeenCalled();
+      expect(await getKey('svc1')).toBeNull();
+    });
+
+    it('可同时增删改', async () => {
+      await setKey('svc1', 'old');
+      await updateCredentials((creds) => {
+        creds['svc1'] = 'new';
+        creds['svc2'] = 'k2';
+      });
+      expect(await getKey('svc1')).toBe('new');
+      expect(await getKey('svc2')).toBe('k2');
     });
   });
 });

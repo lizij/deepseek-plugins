@@ -1,4 +1,4 @@
-import { getAllKeys, setKey, unsetKey } from './credentials.js';
+import { getAllKeys, updateCredentials } from './credentials.js';
 
 /** 多模态模型调用所需配置，所有配置均从加密本地文件读取。 */
 export interface MultimodalConfig {
@@ -67,30 +67,37 @@ export async function getFallbackCount(): Promise<number> {
 /**
  * 设置主模型的 base_url 和/或 model。
  * 只更新提供的字段，未提供的字段保持不变。
+ * 单次批量写入，避免多次解密+加密。
  */
 export async function setPrimaryConfig(opts: { baseUrl?: string; model?: string }): Promise<void> {
-  if (opts.baseUrl) {
-    await setKey(`${CONFIG_PREFIX}.base_url`, opts.baseUrl);
-  }
-  if (opts.model) {
-    await setKey(`${CONFIG_PREFIX}.model`, opts.model);
-  }
+  await updateCredentials((creds) => {
+    if (opts.baseUrl) creds[`${CONFIG_PREFIX}.base_url`] = opts.baseUrl;
+    if (opts.model) creds[`${CONFIG_PREFIX}.model`] = opts.model;
+  });
 }
 
 /**
  * 添加一个备选模型，返回其索引（从 0 开始）。
  * base_url 和 model 写入后，API Key 需通过 `auth set vision.fallback.<index>` 单独设置。
+ * 单次批量写入。
  */
 export async function addFallbackConfig(baseUrl: string, model: string): Promise<number> {
-  const idx = await getFallbackCount();
-  await setKey(`${CONFIG_PREFIX}.fallback.${idx}.base_url`, baseUrl);
-  await setKey(`${CONFIG_PREFIX}.fallback.${idx}.model`, model);
+  const all = await getAllKeys();
+  let idx = 0;
+  while (all[`${CONFIG_PREFIX}.fallback.${idx}.base_url`] || all[`${CONFIG_PREFIX}.fallback.${idx}.model`] || all[`${CONFIG_PREFIX}.fallback.${idx}`]) {
+    idx++;
+  }
+  await updateCredentials((creds) => {
+    creds[`${CONFIG_PREFIX}.fallback.${idx}.base_url`] = baseUrl;
+    creds[`${CONFIG_PREFIX}.fallback.${idx}.model`] = model;
+  });
   return idx;
 }
 
 /**
  * 删除指定索引的备选模型，并重排后续索引避免空洞。
  * 返回是否成功删除（索引不存在时返回 false）。
+ * 单次批量写入完成删除+重排，避免多次解密+加密。
  */
 export async function removeFallbackConfig(idx: number): Promise<boolean> {
   const all = await getAllKeys();
@@ -100,26 +107,29 @@ export async function removeFallbackConfig(idx: number): Promise<boolean> {
     all[`${CONFIG_PREFIX}.fallback.${idx}.model`];
   if (!hasTarget) return false;
 
-  // 删除目标索引的三个 key
-  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}`);
-  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}.base_url`);
-  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}.model`);
+  await updateCredentials((creds) => {
+    // 删除目标索引的三个 key
+    delete creds[`${CONFIG_PREFIX}.fallback.${idx}`];
+    delete creds[`${CONFIG_PREFIX}.fallback.${idx}.base_url`];
+    delete creds[`${CONFIG_PREFIX}.fallback.${idx}.model`];
 
-  // 将后续索引整体前移一位，避免空洞导致 loadAllConfigs 在第一个缺失处停止
-  const total = await getFallbackCount();
-  for (let i = idx + 1; i <= total + 1; i++) {
-    const srcPrefix = `${CONFIG_PREFIX}.fallback.${i}`;
-    const dstPrefix = `${CONFIG_PREFIX}.fallback.${i - 1}`;
-    const apiKey = all[srcPrefix];
-    const baseUrl = all[`${srcPrefix}.base_url`];
-    const model = all[`${srcPrefix}.model`];
-    if (apiKey) await setKey(dstPrefix, apiKey);
-    if (baseUrl) await setKey(`${dstPrefix}.base_url`, baseUrl);
-    if (model) await setKey(`${dstPrefix}.model`, model);
-    await unsetKey(srcPrefix);
-    await unsetKey(`${srcPrefix}.base_url`);
-    await unsetKey(`${srcPrefix}.model`);
-  }
+    // 将后续索引整体前移一位，避免空洞导致 loadAllConfigs 在第一个缺失处停止
+    for (let i = idx + 1; ; i++) {
+      const srcPrefix = `${CONFIG_PREFIX}.fallback.${i}`;
+      const hasMore = creds[srcPrefix] || creds[`${srcPrefix}.base_url`] || creds[`${srcPrefix}.model`];
+      if (!hasMore) break;
+      const dstPrefix = `${CONFIG_PREFIX}.fallback.${i - 1}`;
+      const apiKey = creds[srcPrefix];
+      const baseUrl = creds[`${srcPrefix}.base_url`];
+      const model = creds[`${srcPrefix}.model`];
+      if (apiKey) creds[dstPrefix] = apiKey;
+      if (baseUrl) creds[`${dstPrefix}.base_url`] = baseUrl;
+      if (model) creds[`${dstPrefix}.model`] = model;
+      delete creds[srcPrefix];
+      delete creds[`${srcPrefix}.base_url`];
+      delete creds[`${srcPrefix}.model`];
+    }
+  });
 
   return true;
 }
@@ -134,4 +144,61 @@ export function missingConfigHint(): string {
     '   deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o',
     '   （同一套配置同时支持图片 / 音频 / PDF 输入）',
   ].join('\n');
+}
+
+/** 删除主模型的 base_url / model / API Key（三个 key 一次性删除）。 */
+export async function deletePrimaryConfig(): Promise<void> {
+  await updateCredentials((creds) => {
+    delete creds[CONFIG_PREFIX];
+    delete creds[`${CONFIG_PREFIX}.base_url`];
+    delete creds[`${CONFIG_PREFIX}.model`];
+  });
+}
+
+/**
+ * 更新指定索引备选模型的 base_url / model / API Key。
+ * 只更新提供的字段，未提供的字段保持不变。单次批量写入。
+ */
+export async function updateFallbackConfig(
+  idx: number,
+  opts: { baseUrl?: string; model?: string; apiKey?: string },
+): Promise<void> {
+  const prefix = `${CONFIG_PREFIX}.fallback.${idx}`;
+  await updateCredentials((creds) => {
+    if (opts.baseUrl !== undefined) creds[`${prefix}.base_url`] = opts.baseUrl;
+    if (opts.model !== undefined) creds[`${prefix}.model`] = opts.model;
+    if (opts.apiKey !== undefined) {
+      if (opts.apiKey) creds[prefix] = opts.apiKey;
+      else delete creds[prefix];
+    }
+  });
+}
+
+/**
+ * 交换相邻两个备选模型的位置（用于调整优先级）。
+ * dir 为 -1 时与上一个交换，为 1 时与下一个交换。
+ * 返回是否成功（越界时返回 false）。单次批量写入。
+ */
+export async function moveFallbackConfig(idx: number, dir: -1 | 1): Promise<boolean> {
+  const all = await getAllKeys();
+  const count = await getFallbackCount();
+  if (idx < 0 || idx >= count) return false;
+  const other = idx + dir;
+  if (other < 0 || other >= count) return false;
+
+  await updateCredentials((creds) => {
+    const aPrefix = `${CONFIG_PREFIX}.fallback.${idx}`;
+    const bPrefix = `${CONFIG_PREFIX}.fallback.${other}`;
+    const swap = (suffix: string) => {
+      const av = creds[`${aPrefix}${suffix}`];
+      const bv = creds[`${bPrefix}${suffix}`];
+      if (bv) creds[`${aPrefix}${suffix}`] = bv; else delete creds[`${aPrefix}${suffix}`];
+      if (av) creds[`${bPrefix}${suffix}`] = av; else delete creds[`${bPrefix}${suffix}`];
+    };
+    swap('');
+    swap('.base_url');
+    swap('.model');
+  });
+
+  return true;
 }

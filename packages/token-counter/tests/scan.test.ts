@@ -35,6 +35,13 @@ function userLineWithCwd(ts: string, cwd: string): string {
   });
 }
 
+/** 生成今天指定时刻的 ISO 时间戳，确保 getSummary 的 today 统计命中。 */
+function todayAt(hour: number, minute = 0): string {
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+}
+
 describe('token-counter 扫描/聚合', () => {
   beforeAll(async () => {
     process.env.HOME = TEST_HOME;
@@ -46,13 +53,13 @@ describe('token-counter 扫描/聚合', () => {
     rmSync(TEST_HOME, { recursive: true, force: true });
   });
 
-  it('scanAndAggregate 应扫描 claude 日志并聚合到桶', () => {
+  it('scanAndAggregate 应扫描 claude 日志并聚合到桶', async () => {
     writeClaudeLog([
-      assistantLine(1000, 500, '2026-08-10T10:00:00.000Z'),
-      assistantLine(2000, 800, '2026-08-10T10:05:00.000Z'),
+      assistantLine(1000, 500, todayAt(10)),
+      assistantLine(2000, 800, todayAt(10, 5)),
     ]);
 
-    const result = counter.scanAndAggregate();
+    const result = await counter.scanAndAggregate();
     expect(result.scanned).toBeGreaterThanOrEqual(1);
     expect(result.new_entries).toBe(2);
     expect(result.sources).toContain('claude-code');
@@ -68,15 +75,15 @@ describe('token-counter 扫描/聚合', () => {
     expect(bucket!.rounds).toBe(2);
   });
 
-  it('增量扫描不应重复计数', () => {
+  it('增量扫描不应重复计数', async () => {
     // 追加一条新记录
     writeClaudeLog([
-      assistantLine(1000, 500, '2026-08-10T10:00:00.000Z'),
-      assistantLine(2000, 800, '2026-08-10T10:05:00.000Z'),
-      assistantLine(500, 100, '2026-08-10T10:10:00.000Z'),
+      assistantLine(1000, 500, todayAt(10)),
+      assistantLine(2000, 800, todayAt(10, 5)),
+      assistantLine(500, 100, todayAt(10, 10)),
     ]);
 
-    const result = counter.scanAndAggregate();
+    const result = await counter.scanAndAggregate();
     expect(result.new_entries).toBe(1); // 只解析新增的 1 条
 
     const buckets = counter.getBuckets();
@@ -85,11 +92,11 @@ describe('token-counter 扫描/聚合', () => {
     expect(bucket!.rounds).toBe(3);
   });
 
-  it('文件截断后保留最后已处理行不应重复计数', () => {
+  it('文件截断后保留最后已处理行不应重复计数', async () => {
     // 模拟日志轮转：文件被截断，仅保留最后已处理行
-    writeClaudeLog([assistantLine(500, 100, '2026-08-10T10:10:00.000Z')]);
+    writeClaudeLog([assistantLine(500, 100, todayAt(10, 10))]);
 
-    const result = counter.scanAndAggregate();
+    const result = await counter.scanAndAggregate();
     // 截断后仅剩最后已处理行，应通过 last_hash 识别并跳过，不产生新记录
     expect(result.new_entries).toBe(0);
 
@@ -98,11 +105,11 @@ describe('token-counter 扫描/聚合', () => {
     expect(bucket!.rounds).toBe(3);
   });
 
-  it('文件被完全替换为新内容时应从头解析', () => {
+  it('文件被完全替换为新内容时应从头解析', async () => {
     // 模拟日志轮转：旧内容移除，写入全新的一行
-    writeClaudeLog([assistantLine(700, 300, '2026-08-10T11:00:00.000Z')]);
+    writeClaudeLog([assistantLine(700, 300, todayAt(11))]);
 
-    const result = counter.scanAndAggregate();
+    const result = await counter.scanAndAggregate();
     expect(result.new_entries).toBe(1);
 
     const buckets = counter.getBuckets().filter((b) => b.source === 'claude-code');
@@ -122,13 +129,13 @@ describe('token-counter 扫描/聚合', () => {
     expect(summary.updated_at).toBeTruthy();
   });
 
-  it('项目名应从 cwd 提取', () => {
+  it('项目名应从 cwd 提取', async () => {
     counter.clearAll();
     writeClaudeLog([
-      userLineWithCwd('2026-08-10T12:00:00.000Z', '/Users/me/Projects/ad_base_sdk'),
-      assistantLine(100, 50, '2026-08-10T12:01:00.000Z'),
+      userLineWithCwd(todayAt(12), '/Users/me/Projects/ad_base_sdk'),
+      assistantLine(100, 50, todayAt(12, 1)),
     ]);
-    counter.scanAndAggregate();
+    await counter.scanAndAggregate();
     const bucket = counter.getBuckets().find((b) => b.source === 'claude-code');
     expect(bucket).toBeDefined();
     expect(bucket!.project).toBe('ad_base_sdk');

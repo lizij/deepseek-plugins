@@ -4,9 +4,12 @@ vi.mock('../src/credentials.js', () => ({
   getAllKeys: vi.fn(),
   setKey: vi.fn(),
   unsetKey: vi.fn(),
+  updateCredentials: vi.fn(async (mutator: (creds: Record<string, string>) => void) => {
+    mutator({});
+  }),
 }));
 
-import { getAllKeys, setKey, unsetKey } from '../src/credentials.js';
+import { getAllKeys, setKey, unsetKey, updateCredentials } from '../src/credentials.js';
 import {
   loadConfig,
   loadAllConfigs,
@@ -15,6 +18,9 @@ import {
   setPrimaryConfig,
   addFallbackConfig,
   removeFallbackConfig,
+  deletePrimaryConfig,
+  updateFallbackConfig,
+  moveFallbackConfig,
 } from '../src/multimodal-config.js';
 
 describe('multimodal-config', () => {
@@ -148,19 +154,17 @@ describe('multimodal-config', () => {
   describe('setPrimaryConfig', () => {
     it('仅设置 base_url', async () => {
       await setPrimaryConfig({ baseUrl: 'https://api.test.com/v1' });
-      expect(setKey).toHaveBeenCalledWith('vision.base_url', 'https://api.test.com/v1');
-      expect(setKey).not.toHaveBeenCalledWith('vision.model', expect.anything());
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
     });
 
     it('仅设置 model', async () => {
       await setPrimaryConfig({ model: 'gpt-4o' });
-      expect(setKey).toHaveBeenCalledWith('vision.model', 'gpt-4o');
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
     });
 
     it('同时设置 base_url 和 model', async () => {
       await setPrimaryConfig({ baseUrl: 'https://api.test.com/v1', model: 'gpt-4o' });
-      expect(setKey).toHaveBeenCalledWith('vision.base_url', 'https://api.test.com/v1');
-      expect(setKey).toHaveBeenCalledWith('vision.model', 'gpt-4o');
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -173,8 +177,7 @@ describe('multimodal-config', () => {
       });
       const idx = await addFallbackConfig('https://api.fb.com/v1', 'fb-model');
       expect(idx).toBe(0);
-      expect(setKey).toHaveBeenCalledWith('vision.fallback.0.base_url', 'https://api.fb.com/v1');
-      expect(setKey).toHaveBeenCalledWith('vision.fallback.0.model', 'fb-model');
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -182,7 +185,7 @@ describe('multimodal-config', () => {
     it('不存在的索引返回 false', async () => {
       vi.mocked(getAllKeys).mockResolvedValue({});
       expect(await removeFallbackConfig(0)).toBe(false);
-      expect(unsetKey).not.toHaveBeenCalled();
+      expect(updateCredentials).not.toHaveBeenCalled();
     });
 
     it('存在的索引删除并返回 true', async () => {
@@ -195,9 +198,7 @@ describe('multimodal-config', () => {
         'vision.fallback.0.model': 'fb0-model',
       });
       expect(await removeFallbackConfig(0)).toBe(true);
-      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0');
-      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0.base_url');
-      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0.model');
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -208,6 +209,104 @@ describe('multimodal-config', () => {
       expect(hint).toContain('deepseek-plugin-cli multimodal config');
       expect(hint).toContain('--base-url');
       expect(hint).toContain('--model');
+    });
+  });
+
+  describe('deletePrimaryConfig', () => {
+    it('删除主模型的三个 key', async () => {
+      await deletePrimaryConfig();
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
+      const mutator = vi.mocked(updateCredentials).mock.calls[0]![0];
+      const creds: Record<string, string> = {
+        'vision': 'sk',
+        'vision.base_url': 'https://x',
+        'vision.model': 'm',
+      };
+      mutator(creds);
+      expect(creds).toEqual({});
+    });
+  });
+
+  describe('updateFallbackConfig', () => {
+    it('仅更新提供的字段', async () => {
+      await updateFallbackConfig(0, { baseUrl: 'https://new.com/v1' });
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
+      const mutator = vi.mocked(updateCredentials).mock.calls[0]![0];
+      const creds: Record<string, string> = {
+        'vision.fallback.0': 'sk-old',
+        'vision.fallback.0.base_url': 'https://old.com/v1',
+        'vision.fallback.0.model': 'old-model',
+      };
+      mutator(creds);
+      expect(creds['vision.fallback.0.base_url']).toBe('https://new.com/v1');
+      expect(creds['vision.fallback.0.model']).toBe('old-model');
+      expect(creds['vision.fallback.0']).toBe('sk-old');
+    });
+
+    it('apiKey 为空字符串时删除该 key', async () => {
+      await updateFallbackConfig(0, { apiKey: '' });
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
+      const mutator = vi.mocked(updateCredentials).mock.calls[0]![0];
+      const creds: Record<string, string> = {
+        'vision.fallback.0': 'sk-old',
+        'vision.fallback.0.base_url': 'https://x',
+        'vision.fallback.0.model': 'm',
+      };
+      mutator(creds);
+      expect(creds['vision.fallback.0']).toBeUndefined();
+    });
+  });
+
+  describe('moveFallbackConfig', () => {
+    it('越界索引返回 false', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({});
+      expect(await moveFallbackConfig(0, 1)).toBe(false);
+      expect(updateCredentials).not.toHaveBeenCalled();
+    });
+
+    it('边界方向返回 false', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({
+        'vision.fallback.0': 'sk',
+        'vision.fallback.0.base_url': 'https://x',
+        'vision.fallback.0.model': 'm',
+      });
+      // 第 0 个上移（dir=-1）越界
+      expect(await moveFallbackConfig(0, -1)).toBe(false);
+      expect(updateCredentials).not.toHaveBeenCalled();
+    });
+
+    it('正常交换相邻备选模型', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({
+        'vision': 'sk-primary',
+        'vision.base_url': 'https://primary',
+        'vision.model': 'primary-model',
+        'vision.fallback.0': 'sk0',
+        'vision.fallback.0.base_url': 'https://0',
+        'vision.fallback.0.model': 'm0',
+        'vision.fallback.1': 'sk1',
+        'vision.fallback.1.base_url': 'https://1',
+        'vision.fallback.1.model': 'm1',
+      });
+      expect(await moveFallbackConfig(0, 1)).toBe(true);
+      expect(updateCredentials).toHaveBeenCalledTimes(1);
+      const mutator = vi.mocked(updateCredentials).mock.calls[0]![0];
+      const creds: Record<string, string> = {
+        'vision': 'sk-primary',
+        'vision.base_url': 'https://primary',
+        'vision.model': 'primary-model',
+        'vision.fallback.0': 'sk0',
+        'vision.fallback.0.base_url': 'https://0',
+        'vision.fallback.0.model': 'm0',
+        'vision.fallback.1': 'sk1',
+        'vision.fallback.1.base_url': 'https://1',
+        'vision.fallback.1.model': 'm1',
+      };
+      mutator(creds);
+      // 交换后 fallback.0 和 fallback.1 的值互换
+      expect(creds['vision.fallback.0']).toBe('sk1');
+      expect(creds['vision.fallback.1']).toBe('sk0');
+      expect(creds['vision.fallback.0.model']).toBe('m1');
+      expect(creds['vision.fallback.1.model']).toBe('m0');
     });
   });
 });

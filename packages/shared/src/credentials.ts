@@ -152,6 +152,24 @@ export async function getAllKeys(): Promise<Record<string, string>> {
   return { ...readCredentials() };
 }
 
+/**
+ * 批量更新凭据：在一次读取-修改-写入循环中应用 mutator，
+ * 避免多次 setKey/unsetKey 触发重复的解密+加密开销。
+ * mutator 接收凭据 map 的可变副本，直接修改即可。
+ */
+export async function updateCredentials(
+  mutator: (creds: Record<string, string>) => void,
+): Promise<void> {
+  const creds = readCredentials();
+  mutator(creds);
+  if (Object.keys(creds).length === 0) {
+    try { unlinkSync(CREDENTIALS_FILE); } catch { /* ignore */ }
+    cache = null;
+  } else {
+    writeCredentials(creds);
+  }
+}
+
 /** 删除指定 service 的凭据；不存在时静默返回。 */
 export async function unsetKey(service: string): Promise<void> {
   const creds = readCredentials();

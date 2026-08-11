@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchBalance } from '../src/balance.js';
+import { fetchBalance, formatBalance } from '../src/balance.js';
 
 // Mock credentials module (balance.ts imports getKey from ./credentials.js)
 vi.mock('../src/credentials.js', () => ({
@@ -98,6 +98,34 @@ describe('balance', () => {
           },
         }),
       );
+    });
+  });
+
+  describe('formatBalance', () => {
+    it('CNY 货币使用 ¥ 符号', () => {
+      // parseFloat('100.50') = 100.5 >= 10 → toFixed(1)
+      expect(formatBalance('100.50', 'CNY')).toBe('¥100.5');
+    });
+
+    it('USD 货币使用 $ 符号', () => {
+      // parseFloat('50.25') = 50.25 >= 10 → toFixed(1)
+      expect(formatBalance('50.25', 'USD')).toBe('$50.3');
+    });
+
+    it('未知货币无符号', () => {
+      expect(formatBalance('100', 'EUR')).toBe('100.0');
+    });
+
+    it('大于等于 1000 时无小数', () => {
+      expect(formatBalance('1234.56', 'CNY')).toBe('¥1235');
+    });
+
+    it('小于 10 时两位小数', () => {
+      expect(formatBalance('5.5', 'CNY')).toBe('¥5.50');
+    });
+
+    it('非数字字符串原样返回（带符号）', () => {
+      expect(formatBalance('N/A', 'CNY')).toBe('¥N/A');
     });
   });
 });

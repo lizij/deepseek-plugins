@@ -18,7 +18,7 @@ export function registerToken(program: Command) {
     .description('扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），聚合 token 用量')
     .option('--json', '输出 JSON 格式')
     .action(async (opts) => {
-      const result = scanAndAggregate();
+      const result = await scanAndAggregate();
       if (opts.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -57,7 +57,8 @@ export function registerToken(program: Command) {
     .option('-n, --limit <number>', '显示最近 N 个桶', '20')
     .action(async (opts) => {
       const buckets = getBuckets();
-      const limit = parseInt(opts.limit, 10) || 20;
+      const parsed = parseInt(opts.limit, 10);
+      const limit = Number.isNaN(parsed) ? 20 : parsed;
       const recent = buckets.slice(-limit).reverse();
       if (recent.length === 0) {
         console.log('暂无桶数据，请先执行: deepseek-plugin-cli token scan');

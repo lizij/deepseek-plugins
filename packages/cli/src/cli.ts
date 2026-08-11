@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { version } from '../package.json';
 import { runAsDaemon } from './gui/service.js';
 import { registerAuth } from './commands/auth.js';
 import { registerVision } from './commands/vision.js';
@@ -21,30 +22,28 @@ if (process.argv[2] === '__daemon') {
   });
   // runAsDaemon 内部常驻不退出，此处不再继续解析命令
 } else {
+  const program = new Command();
 
-const program = new Command();
+  program
+    .name('deepseek-plugin-cli')
+    .description('DeepSeek 插件统一管理工具：API Key 管理、多模态模型配置、识图/音频/PDF、余额查询、菜单栏应用、Skill 安装、Token 统计')
+    .version(version);
 
-program
-  .name('deepseek-plugin-cli')
-  .description('DeepSeek 插件统一管理工具：API Key 管理、多模态模型配置、识图/音频/PDF、余额查询、菜单栏应用、Skill 安装、Token 统计')
-  .version('0.14.0');
+  registerAuth(program);
+  registerVision(program);
+  registerMultimodal(program);
+  registerAudio(program);
+  registerPdf(program);
+  registerBalance(program);
+  registerSkill(program);
+  registerCompletion(program);
+  registerMenuBar(program);
+  registerToken(program);
+  registerGui(program);
+  registerService(program);
 
-registerAuth(program);
-registerVision(program);
-registerMultimodal(program);
-registerAudio(program);
-registerPdf(program);
-registerBalance(program);
-registerSkill(program);
-registerCompletion(program);
-registerMenuBar(program);
-registerToken(program);
-registerGui(program);
-registerService(program);
-
-program.parseAsync().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
-
+  program.parseAsync().catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
 }

@@ -68,7 +68,7 @@ async function buildContentPart(modality: Modality, params: AnalyzeParams): Prom
 }
 
 /** 各模态默认 prompt。 */
-const DEFAULT_PROMPT_BY_MODALITY: Record<Modality, string> = {
+export const DEFAULT_PROMPT_BY_MODALITY: Record<Modality, string> = {
   image: DEFAULT_PROMPT,
   audio: '请逐字转写（ASR）这段音频中所说的每一句话，原样输出文字内容，不要总结、不要翻译、不要补充说明。',
   pdf: '请详细描述这个 PDF 文档的内容。',

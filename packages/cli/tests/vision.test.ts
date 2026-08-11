@@ -42,7 +42,7 @@ describe('vision', () => {
   it('vision --detail 无效值报错', () => {
     const { stderr, status } = runOrError('vision /tmp/test.png --detail invalid');
     expect(status).not.toBe(0);
-    expect(stderr).toContain('仅支持 low 或 high');
+    expect(stderr).toContain('Allowed choices are low, high');
   });
 
   it('vision 本地文件不存在时报错', () => {
@@ -51,44 +51,44 @@ describe('vision', () => {
     expect(stderr).toContain('ENOENT');
   });
 
-  it('vision config --help 显示选项', () => {
-    const out = run('vision config --help');
+  it('multimodal config --help 显示选项', () => {
+    const out = run('multimodal config --help');
     expect(out).toContain('--base-url');
     expect(out).toContain('--model');
   });
 
-  it('vision config 无参数时报错', () => {
-    const { stderr, status } = runOrError('vision config');
+  it('multimodal config 无参数时报错', () => {
+    const { stderr, status } = runOrError('multimodal config');
     expect(status).not.toBe(0);
     expect(stderr).toContain('请提供');
   });
 
-  describe('vision fallback', () => {
+  describe('multimodal fallback', () => {
     it('fallback --help 显示子命令', () => {
-      const out = run('vision fallback --help');
+      const out = run('multimodal fallback --help');
       expect(out).toContain('add');
       expect(out).toContain('list');
       expect(out).toContain('remove');
     });
 
     it('fallback add --help 显示选项', () => {
-      const out = run('vision fallback add --help');
+      const out = run('multimodal fallback add --help');
       expect(out).toContain('--base-url');
       expect(out).toContain('--model');
     });
 
     it('fallback add 缺少参数时报错', () => {
-      expect(() => run('vision fallback add')).toThrow();
+      expect(() => run('multimodal fallback add')).toThrow();
     });
 
     it('fallback list 正常执行', () => {
-      const out = run('vision fallback list');
+      const out = run('multimodal fallback list');
       // 可能输出"未配置"或列出模型，不应报错
       expect(typeof out).toBe('string');
     });
 
     it('fallback remove 无效索引报错', () => {
-      const { stderr, status } = runOrError('vision fallback remove abc');
+      const { stderr, status } = runOrError('multimodal fallback remove abc');
       expect(status).not.toBe(0);
       expect(stderr).toContain('有效的备选模型索引');
     });
