@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.12.0"
+  version: "0.14.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -124,4 +124,7 @@ scripts/deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含�
 scripts/deepseek-plugin-cli token buckets           # 查看桶数据
 scripts/deepseek-plugin-cli token report [--days N] # 按日用量报告
 scripts/deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
+scripts/deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打开图形化配置界面（管理 API Key / 多模态模型 / Token 用量，后台常驻）
+scripts/deepseek-plugin-cli service status    # 查看后台服务运行状态
+scripts/deepseek-plugin-cli service stop      # 终止后台服务
 ```

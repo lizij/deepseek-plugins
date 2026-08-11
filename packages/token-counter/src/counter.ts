@@ -68,7 +68,7 @@ export interface TokenSummary {
   by_model: TokenBreakdownItem[];
 }
 
-interface DailyReport {
+export interface DailyReport {
   date: string;
   rounds: number;
   input_tokens: number;

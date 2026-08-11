@@ -14489,6 +14489,1624 @@ var {
   Help
 } = import_index.default;
 
+// src/gui/service.ts
+var import_node_http = require("http");
+var import_node_child_process = require("child_process");
+var import_node_fs = require("fs");
+var import_node_path = require("path");
+var import_node_os = require("os");
+
+// ../shared/dist/chunk-3PAYRQTL.js
+var import_crypto = require("crypto");
+var import_fs = require("fs");
+var import_path = require("path");
+var import_os = require("os");
+var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".deepseek-plugins");
+var CREDENTIALS_FILE = (0, import_path.join)(CONFIG_DIR, "credentials.enc");
+var FILE_MAGIC = Buffer.from([68, 83, 67, 49]);
+var FILE_VERSION = 1;
+var HEADER_SIZE = FILE_MAGIC.length + 1;
+function getMachineFingerprint() {
+  return `${(0, import_os.hostname)()}:${(0, import_os.userInfo)().username}:${(0, import_os.platform)()}:${(0, import_os.arch)()}`;
+}
+function deriveKey(salt) {
+  return (0, import_crypto.pbkdf2Sync)(getMachineFingerprint(), salt, 1e5, 32, "sha256");
+}
+var cache = null;
+function getFileMtime() {
+  try {
+    return (0, import_fs.statSync)(CREDENTIALS_FILE).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+function readCredentials() {
+  const mtime = getFileMtime();
+  if (cache && cache.mtime === mtime) {
+    return cache.creds;
+  }
+  if (!(0, import_fs.existsSync)(CREDENTIALS_FILE)) {
+    cache = { mtime, creds: {} };
+    return cache.creds;
+  }
+  const data = (0, import_fs.readFileSync)(CREDENTIALS_FILE);
+  const hasHeader = data.length >= HEADER_SIZE && data.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC);
+  let salt, iv, authTag, encrypted;
+  if (hasHeader) {
+    if (data.length < HEADER_SIZE + 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    const offset = HEADER_SIZE;
+    salt = data.subarray(offset, offset + 16);
+    iv = data.subarray(offset + 16, offset + 28);
+    authTag = data.subarray(offset + 28, offset + 44);
+    encrypted = data.subarray(offset + 44);
+  } else {
+    if (data.length < 44) {
+      cache = { mtime, creds: {} };
+      return cache.creds;
+    }
+    salt = data.subarray(0, 16);
+    iv = data.subarray(16, 28);
+    authTag = data.subarray(28, 44);
+    encrypted = data.subarray(44);
+  }
+  try {
+    const key = deriveKey(salt);
+    const decipher = (0, import_crypto.createDecipheriv)("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    const creds = JSON.parse(decrypted.toString("utf-8"));
+    cache = { mtime, creds };
+    return creds;
+  } catch {
+    console.warn(
+      "\u26A0 \u51ED\u636E\u6587\u4EF6\u89E3\u5BC6\u5931\u8D25\uFF0C\u6240\u6709\u5DF2\u5B58\u50A8\u7684 API Key \u5C06\u4E0D\u53EF\u7528\u3002\u53EF\u80FD\u539F\u56E0\uFF1A\u673A\u5668\u73AF\u5883\u53D8\u5316\uFF08hostname/\u5E73\u53F0/\u67B6\u6784\uFF09\u6216\u6587\u4EF6\u635F\u574F\u3002\u8BF7\u91CD\u65B0\u8FD0\u884C auth set \u914D\u7F6E\u5404\u670D\u52A1\u7684 API Key\u3002"
+    );
+    cache = { mtime, creds: {} };
+    return cache.creds;
+  }
+}
+function writeCredentials(creds) {
+  if (!(0, import_fs.existsSync)(CONFIG_DIR)) {
+    (0, import_fs.mkdirSync)(CONFIG_DIR, { recursive: true, mode: 448 });
+  }
+  const salt = (0, import_crypto.randomBytes)(16);
+  const iv = (0, import_crypto.randomBytes)(12);
+  const key = deriveKey(salt);
+  const cipher = (0, import_crypto.createCipheriv)("aes-256-gcm", key, iv);
+  const plaintext = JSON.stringify(creds);
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  const output = Buffer.concat([FILE_MAGIC, Buffer.from([FILE_VERSION]), salt, iv, authTag, encrypted]);
+  (0, import_fs.writeFileSync)(CREDENTIALS_FILE, output, { mode: 384 });
+  cache = { mtime: getFileMtime(), creds };
+}
+async function setKey(service, key) {
+  const creds = readCredentials();
+  creds[service] = key;
+  writeCredentials(creds);
+}
+async function getKey(service) {
+  const creds = readCredentials();
+  return creds[service] ?? null;
+}
+async function getAllKeys() {
+  return { ...readCredentials() };
+}
+async function unsetKey(service) {
+  const creds = readCredentials();
+  if (service in creds) {
+    delete creds[service];
+    if (Object.keys(creds).length === 0) {
+      try {
+        (0, import_fs.unlinkSync)(CREDENTIALS_FILE);
+      } catch {
+      }
+      cache = null;
+    } else {
+      writeCredentials(creds);
+    }
+  }
+}
+async function listServices() {
+  return Object.keys(readCredentials());
+}
+
+// ../shared/dist/balance.js
+var BALANCE_URL = "https://api.deepseek.com/user/balance";
+function formatBalance(s, currency) {
+  const n = parseFloat(s);
+  const symbol = currency === "CNY" ? "\xA5" : currency === "USD" ? "$" : "";
+  if (isNaN(n)) return `${symbol}${s}`;
+  if (n >= 1e3) return `${symbol}${n.toFixed(0)}`;
+  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
+  return `${symbol}${n.toFixed(2)}`;
+}
+async function fetchBalance() {
+  try {
+    const apiKey = await getKey("deepseek");
+    if (!apiKey) {
+      return { result: null, error: "\u672A\u914D\u7F6E API Key\uFF0C\u8BF7\u6267\u884C: deepseek-plugin-cli auth set deepseek" };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3e4);
+    const resp = await fetch(BALANCE_URL, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+    if (!resp.ok) {
+      return { result: null, error: `API \u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})` };
+    }
+    const data = await resp.json();
+    return {
+      result: {
+        isAvailable: data.is_available,
+        balances: data.balance_infos.map((b) => ({
+          currency: b.currency,
+          totalBalance: b.total_balance,
+          grantedBalance: b.granted_balance,
+          toppedUpBalance: b.topped_up_balance
+        }))
+      }
+    };
+  } catch (err) {
+    return { result: null, error: `\u7F51\u7EDC\u9519\u8BEF: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+// ../token-counter/dist/counter.js
+var import_fs2 = require("fs");
+var import_crypto2 = require("crypto");
+var import_module = require("module");
+var import_os2 = require("os");
+var import_path2 = require("path");
+var import_meta = {};
+var require2 = (0, import_module.createRequire)(import_meta.url || "file:///noop.js");
+var DATA_DIR = (0, import_path2.join)((0, import_os2.homedir)(), ".deepseek-plugins");
+var BUCKET_FILE = (0, import_path2.join)(DATA_DIR, "token-buckets.json");
+var SCAN_META_FILE = (0, import_path2.join)(DATA_DIR, "token-scan-meta.json");
+var BUCKET_MS = 30 * 60 * 1e3;
+var BUCKET_RETENTION_DAYS = 90;
+var RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1e3;
+function ensureDataDir() {
+  if (!(0, import_fs2.existsSync)(DATA_DIR)) {
+    (0, import_fs2.mkdirSync)(DATA_DIR, { recursive: true, mode: 448 });
+  }
+}
+function floorToBucket(ts) {
+  return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
+}
+function safeParseTime(value) {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const ts = new Date(value).getTime();
+  return isNaN(ts) ? null : ts;
+}
+function bucketKey(bucketStart, source, model, project) {
+  return `${bucketStart}|${source}|${model}|${project}`;
+}
+function hashLine(line) {
+  return (0, import_crypto2.createHash)("sha256").update(line).digest("hex");
+}
+function formatNumber(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
+}
+function loadBuckets() {
+  if (!(0, import_fs2.existsSync)(BUCKET_FILE)) return [];
+  try {
+    const raw = (0, import_fs2.readFileSync)(BUCKET_FILE, "utf-8");
+    if (!raw.trim()) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+function saveBuckets(buckets) {
+  ensureDataDir();
+  (0, import_fs2.writeFileSync)(BUCKET_FILE, JSON.stringify(buckets), "utf-8");
+}
+function loadScanMeta() {
+  if (!(0, import_fs2.existsSync)(SCAN_META_FILE)) return { files: {}, last_scan: "" };
+  try {
+    return JSON.parse((0, import_fs2.readFileSync)(SCAN_META_FILE, "utf-8"));
+  } catch {
+    return { files: {}, last_scan: "" };
+  }
+}
+function saveScanMeta(meta) {
+  ensureDataDir();
+  (0, import_fs2.writeFileSync)(SCAN_META_FILE, JSON.stringify(meta), "utf-8");
+}
+function findClaudeCodeLogs() {
+  const base = (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "projects");
+  if (!(0, import_fs2.existsSync)(base)) return [];
+  const targets = [];
+  const walk = (dir) => {
+    const entries = (0, import_fs2.readdirSync)(dir, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const full = (0, import_path2.join)(dir, e.name);
+      if (e.isDirectory()) {
+        walk(full);
+      } else if (e.name.endsWith(".jsonl")) {
+        targets.push({ path: full, source: "claude-code" });
+      }
+    }
+  };
+  try {
+    walk(base);
+  } catch {
+  }
+  return targets;
+}
+function findCodexLogs() {
+  const candidates = [
+    (0, import_path2.join)((0, import_os2.homedir)(), ".codex", "logs"),
+    (0, import_path2.join)((0, import_os2.homedir)(), ".config", "codex", "logs")
+  ];
+  const targets = [];
+  for (const dir of candidates) {
+    if (!(0, import_fs2.existsSync)(dir)) continue;
+    try {
+      const entries = (0, import_fs2.readdirSync)(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
+          targets.push({ path: (0, import_path2.join)(dir, e.name), source: "codex" });
+        }
+      }
+    } catch {
+    }
+  }
+  return targets;
+}
+function findCursorLogs() {
+  const base = (0, import_path2.join)((0, import_os2.homedir)(), "Library", "Application Support", "Cursor", "logs");
+  if (!(0, import_fs2.existsSync)(base)) return [];
+  const targets = [];
+  try {
+    const entries = (0, import_fs2.readdirSync)(base, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        const sub = (0, import_path2.join)(base, e.name);
+        try {
+          const subEntries = (0, import_fs2.readdirSync)(sub, { withFileTypes: true });
+          for (const se of subEntries) {
+            if (se.name.endsWith(".jsonl") || se.name.endsWith(".log")) {
+              targets.push({ path: (0, import_path2.join)(sub, se.name), source: "cursor" });
+            }
+          }
+        } catch {
+        }
+      } else if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
+        targets.push({ path: (0, import_path2.join)(base, e.name), source: "cursor" });
+      }
+    }
+  } catch {
+  }
+  return targets;
+}
+function discoverScanTargets() {
+  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs(), ...findOpenCodeDb()];
+}
+function findOpenCodeDb() {
+  const candidates = [
+    (0, import_path2.join)((0, import_os2.homedir)(), ".local", "share", "opencode", "opencode.db")
+  ];
+  const targets = [];
+  for (const p of candidates) {
+    if ((0, import_fs2.existsSync)(p)) targets.push({ path: p, source: "opencode" });
+  }
+  return targets;
+}
+function readTargetLines(target) {
+  if (target.source === "opencode") {
+    return readOpenCodeMessages(target.path);
+  }
+  const content = (0, import_fs2.readFileSync)(target.path, "utf-8");
+  return content.split("\n").filter((l) => l.trim().length > 0);
+}
+function readOpenCodeMessages(dbPath) {
+  try {
+    const { DatabaseSync } = require2("node:sqlite");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const stmt = db.prepare(
+      "SELECT data FROM message WHERE data LIKE ? AND data LIKE ? ORDER BY time_created, id"
+    );
+    const rows = stmt.all('%"role":"assistant"%', '%"tokens"%');
+    db.close();
+    const lines = [];
+    for (const row of rows) {
+      if (typeof row.data === "string") lines.push(row.data);
+    }
+    return lines;
+  } catch {
+    return [];
+  }
+}
+function extractProject(source, filePath, lines) {
+  if (source === "claude-code") {
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split("/").filter(Boolean).pop();
+        if (base) return base;
+      }
+    }
+    const parts = filePath.split("/");
+    const idx = parts.lastIndexOf("projects");
+    if (idx >= 0 && idx + 1 < parts.length) {
+      const encoded = parts[idx + 1] ?? "";
+      const decoded = encoded.replace(/^-/, "").split("-").filter(Boolean);
+      return decoded[decoded.length - 1] || "unknown";
+    }
+  }
+  if (source === "opencode") {
+    for (const line of lines) {
+      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        const base = m[1].split("/").filter(Boolean).pop();
+        if (base) return base;
+      }
+    }
+  }
+  return "unknown";
+}
+function parseClaudeCodeLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    if (obj.type !== "assistant") return null;
+    const msg = obj.message;
+    if (!msg || !msg.usage) return null;
+    const usage = msg.usage;
+    const ts = safeParseTime(obj.timestamp);
+    if (ts === null) return null;
+    return {
+      timestamp: new Date(ts).toISOString(),
+      source: "claude-code",
+      model: msg.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || 0,
+        output_tokens: usage.output_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseCodexLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    const usage = obj.usage || obj.token_usage;
+    if (!usage) return null;
+    const time = safeParseTime(obj.timestamp || obj.created_at || obj.time);
+    if (time === null) return null;
+    return {
+      timestamp: new Date(time).toISOString(),
+      source: "codex",
+      model: obj.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || usage.prompt_tokens || 0,
+        output_tokens: usage.output_tokens || usage.completion_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseCursorLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    const usage = obj.usage;
+    if (!usage) return null;
+    const time = safeParseTime(obj.timestamp || obj.time);
+    if (time === null) return null;
+    return {
+      timestamp: new Date(time).toISOString(),
+      source: "cursor",
+      model: obj.model || "unknown",
+      project: "unknown",
+      usage: {
+        input_tokens: usage.input_tokens || 0,
+        output_tokens: usage.output_tokens || 0,
+        cached_input_tokens: usage.cache_read_input_tokens || 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+        reasoning_output_tokens: usage.reasoning_output_tokens || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function parseLine(line, source) {
+  switch (source) {
+    case "claude-code":
+      return parseClaudeCodeLine(line);
+    case "codex":
+      return parseCodexLine(line);
+    case "cursor":
+      return parseCursorLine(line);
+    case "opencode":
+      return parseOpenCodeLine(line);
+    default:
+      return null;
+  }
+}
+function parseOpenCodeLine(line) {
+  try {
+    const obj = JSON.parse(line);
+    if (obj.role !== "assistant") return null;
+    const tokens = obj.tokens;
+    if (!tokens) return null;
+    const ts = safeParseTime(obj.time?.created);
+    if (ts === null) return null;
+    const model = [obj.providerID, obj.modelID].filter(Boolean).join("/") || "unknown";
+    return {
+      timestamp: new Date(ts).toISOString(),
+      source: "opencode",
+      model,
+      project: "unknown",
+      usage: {
+        input_tokens: tokens.input || 0,
+        output_tokens: tokens.output || 0,
+        cached_input_tokens: tokens.cache?.read || 0,
+        cache_creation_input_tokens: tokens.cache?.write || 0,
+        reasoning_output_tokens: tokens.reasoning || 0
+      }
+    };
+  } catch {
+    return null;
+  }
+}
+function scanAndAggregate() {
+  ensureDataDir();
+  const targets = discoverScanTargets();
+  const meta = loadScanMeta();
+  const buckets = loadBuckets();
+  const bucketMap = /* @__PURE__ */ new Map();
+  for (const b of buckets) {
+    bucketMap.set(bucketKey(new Date(b.bucket_start).getTime(), b.source, b.model, b.project), b);
+  }
+  let newEntries = 0;
+  const sources = /* @__PURE__ */ new Set();
+  for (const target of targets) {
+    sources.add(target.source);
+    let stat;
+    try {
+      stat = (0, import_fs2.statSync)(target.path);
+    } catch {
+      continue;
+    }
+    const cached = meta.files[target.path];
+    if (target.source !== "opencode" && cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
+      continue;
+    }
+    let lines;
+    try {
+      lines = readTargetLines(target);
+    } catch {
+      continue;
+    }
+    let startLine;
+    if (cached?.last_hash && lines.length > 0) {
+      const oldIdx = (cached.last_line ?? 0) - 1;
+      const oldLine = oldIdx >= 0 && oldIdx < lines.length ? lines[oldIdx] : void 0;
+      const prefixIntact = oldLine !== void 0 && hashLine(oldLine) === cached.last_hash;
+      if (prefixIntact) {
+        startLine = (cached.last_line ?? 0) > lines.length ? 0 : cached.last_line ?? 0;
+      } else {
+        const idx = lines.findIndex((l) => hashLine(l) === cached.last_hash);
+        startLine = idx >= 0 ? idx + 1 : 0;
+      }
+    } else {
+      startLine = 0;
+    }
+    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
+    if (newLines.length === 0) {
+      const lastLine2 = lines[lines.length - 1];
+      meta.files[target.path] = {
+        mtime: stat.mtimeMs,
+        size: stat.size,
+        last_line: lines.length,
+        last_hash: lastLine2 !== void 0 ? hashLine(lastLine2) : cached?.last_hash ?? ""
+      };
+      continue;
+    }
+    const project = extractProject(target.source, target.path, lines);
+    for (const line of newLines) {
+      const entry = parseLine(line, target.source);
+      if (!entry) continue;
+      entry.project = project;
+      newEntries++;
+      const ts = new Date(entry.timestamp).getTime();
+      const bucketStart = floorToBucket(ts);
+      const key = bucketKey(bucketStart, entry.source, entry.model, entry.project);
+      const existing = bucketMap.get(key);
+      if (existing) {
+        existing.input_tokens += entry.usage.input_tokens;
+        existing.output_tokens += entry.usage.output_tokens;
+        existing.cached_input_tokens += entry.usage.cached_input_tokens;
+        existing.cache_creation_input_tokens += entry.usage.cache_creation_input_tokens;
+        existing.reasoning_output_tokens += entry.usage.reasoning_output_tokens;
+        existing.total_tokens += entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
+        existing.rounds += 1;
+      } else {
+        const total = entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
+        bucketMap.set(key, {
+          bucket_start: new Date(bucketStart).toISOString(),
+          source: entry.source,
+          model: entry.model,
+          project: entry.project,
+          input_tokens: entry.usage.input_tokens,
+          output_tokens: entry.usage.output_tokens,
+          cached_input_tokens: entry.usage.cached_input_tokens,
+          cache_creation_input_tokens: entry.usage.cache_creation_input_tokens,
+          reasoning_output_tokens: entry.usage.reasoning_output_tokens,
+          total_tokens: total,
+          rounds: 1
+        });
+      }
+    }
+    const lastProcessed = lines[Math.min(startLine + newLines.length, lines.length) - 1];
+    meta.files[target.path] = {
+      mtime: stat.mtimeMs,
+      size: stat.size,
+      last_line: lines.length,
+      last_hash: lastProcessed ? hashLine(lastProcessed) : cached?.last_hash ?? ""
+    };
+  }
+  const cutoff = Date.now() - RETENTION_MS;
+  const allBuckets = Array.from(bucketMap.values()).filter((b) => new Date(b.bucket_start).getTime() >= cutoff).sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
+  saveBuckets(allBuckets);
+  meta.last_scan = (/* @__PURE__ */ new Date()).toISOString();
+  saveScanMeta(meta);
+  return {
+    scanned: targets.length,
+    new_entries: newEntries,
+    total_buckets: allBuckets.length,
+    sources: Array.from(sources)
+  };
+}
+function getBuckets() {
+  return loadBuckets();
+}
+function getSummary() {
+  const buckets = loadBuckets();
+  const now = Date.now();
+  const todayStart = /* @__PURE__ */ new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1e3;
+  let today = 0;
+  let todayInput = 0;
+  let todayOutput = 0;
+  let todayCached = 0;
+  let todayCacheCreation = 0;
+  let todayReasoning = 0;
+  let sevenDay = 0;
+  let allTime = 0;
+  const bySourceMap = /* @__PURE__ */ new Map();
+  const byModelMap = /* @__PURE__ */ new Map();
+  for (const b of buckets) {
+    const ts = new Date(b.bucket_start).getTime();
+    allTime += b.total_tokens;
+    if (ts >= sevenDaysAgo) sevenDay += b.total_tokens;
+    if (ts >= todayStart.getTime()) {
+      today += b.total_tokens;
+      todayInput += b.input_tokens;
+      todayOutput += b.output_tokens;
+      todayCached += b.cached_input_tokens;
+      todayCacheCreation += b.cache_creation_input_tokens;
+      todayReasoning += b.reasoning_output_tokens;
+      bySourceMap.set(b.source, (bySourceMap.get(b.source) ?? 0) + b.total_tokens);
+      byModelMap.set(b.model, (byModelMap.get(b.model) ?? 0) + b.total_tokens);
+    }
+  }
+  const toBreakdown = (m) => Array.from(m.entries()).filter(([, tokens]) => tokens > 0).map(([name, tokens]) => ({ name, tokens })).sort((a, b) => b.tokens - a.tokens);
+  return {
+    today,
+    today_input: todayInput,
+    today_output: todayOutput,
+    today_cached: todayCached,
+    today_cache_creation: todayCacheCreation,
+    today_reasoning: todayReasoning,
+    seven_day: sevenDay,
+    all_time: allTime,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    by_source: toBreakdown(bySourceMap),
+    by_model: toBreakdown(byModelMap)
+  };
+}
+function generateDailyReport(days) {
+  if (days <= 0) return [];
+  const buckets = loadBuckets();
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1e3;
+  const dayMap = /* @__PURE__ */ new Map();
+  for (const b of buckets) {
+    const ts = new Date(b.bucket_start).getTime();
+    if (ts < cutoff) continue;
+    const date = b.bucket_start.slice(0, 10);
+    const existing = dayMap.get(date);
+    if (existing) {
+      existing.rounds += b.rounds;
+      existing.input_tokens += b.input_tokens;
+      existing.output_tokens += b.output_tokens;
+      existing.cached_input_tokens += b.cached_input_tokens;
+      existing.cache_creation_input_tokens += b.cache_creation_input_tokens;
+      existing.reasoning_output_tokens += b.reasoning_output_tokens;
+      existing.total_tokens += b.total_tokens;
+    } else {
+      dayMap.set(date, {
+        date,
+        rounds: b.rounds,
+        input_tokens: b.input_tokens,
+        output_tokens: b.output_tokens,
+        cached_input_tokens: b.cached_input_tokens,
+        cache_creation_input_tokens: b.cache_creation_input_tokens,
+        reasoning_output_tokens: b.reasoning_output_tokens,
+        total_tokens: b.total_tokens
+      });
+    }
+  }
+  return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+function formatReport(days) {
+  const report = generateDailyReport(days);
+  if (report.length === 0) return `\u8FD1 ${days} \u5929\u65E0 token \u7528\u91CF\u8BB0\u5F55\u3002`;
+  const lines = [];
+  lines.push(`Token \u7528\u91CF\u7EDF\u8BA1 (\u8FD1 ${days} \u5929)`);
+  lines.push("");
+  lines.push("\u65E5\u671F         \u8F6E\u6B21    \u8F93\u5165        \u8F93\u51FA        \u603B\u8BA1");
+  lines.push("\u2500".repeat(55));
+  let totalRounds = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalAll = 0;
+  for (const day of report) {
+    totalRounds += day.rounds;
+    totalInput += day.input_tokens;
+    totalOutput += day.output_tokens;
+    totalAll += day.total_tokens;
+    lines.push(
+      `${day.date}  ${String(day.rounds).padStart(5)}  ${formatNumber(day.input_tokens).padStart(8)}  ${formatNumber(day.output_tokens).padStart(8)}  ${formatNumber(day.total_tokens).padStart(8)}`
+    );
+  }
+  lines.push("\u2500".repeat(55));
+  lines.push(
+    `\u5408\u8BA1         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalAll).padStart(8)}`
+  );
+  lines.push("");
+  lines.push(`\u6876\u6570\u636E\u6587\u4EF6: ${BUCKET_FILE}`);
+  return lines.join("\n");
+}
+function clearAll() {
+  ensureDataDir();
+  (0, import_fs2.writeFileSync)(BUCKET_FILE, "[]", "utf-8");
+  (0, import_fs2.writeFileSync)(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: "" }), "utf-8");
+}
+
+// src/gui/index.html
+var gui_default = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DeepSeek Plugins \xB7 \u914D\u7F6E\u7BA1\u7406</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  main { max-width: 880px; margin: 24px auto; padding: 0 16px 80px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .badge.primary { background: #dbeafe; color: #1e40af; }
+  .badge.fallback { background: #f3f4f6; color: #4b5563; }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+  input[type=text], input[type=password] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+  }
+  input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: var(--primary); }
+  button {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #f9fafb; }
+  button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  button.danger { color: var(--danger); border-color: #fecaca; }
+  button.danger:hover { background: #fef2f2; border-color: var(--danger); color: var(--danger-hover); }
+  button.ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 6px 8px; }
+  button.ghost:hover { background: #f3f4f6; color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .model-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 12px;
+    background: #fcfcfd;
+  }
+  .model-item .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .model-item .title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .model-item .actions { display: flex; gap: 4px; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2);
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  .toast.ok { background: var(--ok); }
+  .toast.err { background: var(--danger); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .pw-toggle { font-size: 11px; color: var(--primary); cursor: pointer; user-select: none; margin-left: 8px; }
+  .add-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .stat { flex: 1; min-width: 90px; background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .stat-label { font-size: 11px; color: var(--muted); }
+  .stat-val { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .bar-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .bar-row .name { width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .bar-row .track { flex: 1; height: 18px; background: #f3f4f6; border-radius: 4px; overflow: hidden; position: relative; min-width: 60px; }
+  .bar-row .fill { display: block; height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 4px; min-width: 3px; transition: width .3s ease; }
+  .bar-row .val { width: 70px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; margin-top: 6px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-table th, .data-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .data-table th { color: var(--muted); font-weight: 600; background: #f9fafb; }
+  .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>\u{1F433} DeepSeek Plugins \xB7 \u914D\u7F6E\u7BA1\u7406</h1>
+    <div class="sub">\u7BA1\u7406 DeepSeek API Key \u4E0E\u591A\u6A21\u6001\u6A21\u578B\uFF08vision / audio / pdf \u5171\u7528\uFF09</div>
+  </div>
+  <button class="ghost" onclick="refresh()">\u21BB \u5237\u65B0</button>
+</header>
+
+<main>
+  <!-- DeepSeek API Key -->
+  <section class="card">
+    <h2>DeepSeek API Key <span class="badge primary">\u4F59\u989D\u67E5\u8BE2</span></h2>
+    <div class="row">
+      <div class="field" style="flex:2">
+        <label>API Key<span class="pw-toggle" onclick="toggleDsPw(this)">\u663E\u793A</span></label>
+        <input type="password" id="ds-key" placeholder="sk-..." autocomplete="off" />
+      </div>
+      <div>
+        <button class="primary" onclick="saveDeepSeekKey()">\u4FDD\u5B58</button>
+      </div>
+    </div>
+    <div class="hint">\u7528\u4E8E <code>balance</code> \u4F59\u989D\u67E5\u8BE2\u4E0E\u83DC\u5355\u680F\u5E94\u7528\u3002\u52A0\u5BC6\u5B58\u50A8\u4E8E\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002</div>
+  </section>
+
+  <!-- \u591A\u6A21\u6001\u6A21\u578B -->
+  <section class="card">
+    <h2>\u591A\u6A21\u6001\u6A21\u578B <span class="badge primary">\u4E3B\u6A21\u578B</span> + <span class="badge fallback">\u5907\u9009\u5BB9\u707E</span></h2>
+    <div id="model-list"></div>
+    <div class="add-bar">
+      <div class="hint">\u8C03\u7528\u987A\u5E8F\uFF1A\u4E3B\u6A21\u578B \u2192 \u5907\u9009 #0 \u2192 \u5907\u9009 #1 \u2026\uFF0C\u4EFB\u4E00\u6210\u529F\u5373\u8FD4\u56DE\u3002</div>
+      <button class="primary" onclick="openAddFallback()">+ \u6DFB\u52A0\u5907\u9009\u6A21\u578B</button>
+    </div>
+  </section>
+
+  <!-- Token \u7528\u91CF -->
+  <section class="card">
+    <h2>Token \u7528\u91CF <span class="badge primary">\u591A\u7EF4\u7EDF\u8BA1</span>
+      <button class="ghost" style="margin-left:auto" onclick="loadToken()">\u21BB \u5237\u65B0</button>
+    </h2>
+    <div id="token-loading" class="empty">\u52A0\u8F7D\u4E2D\u2026</div>
+    <div id="token-body" style="display:none">
+      <div class="row" style="margin-bottom:16px">
+        <div class="stat"><div class="stat-label">\u4ECA\u65E5</div><div class="stat-val" id="t-today">0</div></div>
+        <div class="stat"><div class="stat-label">\u8F93\u5165</div><div class="stat-val" id="t-input">0</div></div>
+        <div class="stat"><div class="stat-label">\u8F93\u51FA</div><div class="stat-val" id="t-output">0</div></div>
+        <div class="stat"><div class="stat-label">\u7F13\u5B58</div><div class="stat-val" id="t-cached">0</div></div>
+        <div class="stat"><div class="stat-label">\u8FD1 7 \u5929</div><div class="stat-val" id="t-7d">0</div></div>
+        <div class="stat"><div class="stat-label">\u7D2F\u8BA1</div><div class="stat-val" id="t-all">0</div></div>
+      </div>
+
+      <div class="row">
+        <div class="field" style="min-width:260px">
+          <label>\u6309 Agent\uFF08\u6765\u6E90\uFF09</label>
+          <div id="t-by-source" class="bar-list"></div>
+        </div>
+        <div class="field" style="min-width:260px">
+          <label>\u6309 Model</label>
+          <div id="t-by-model" class="bar-list"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px">
+        <label style="font-size:12px;color:var(--muted);font-weight:500">\u8FD1 7 \u65E5\u8D8B\u52BF</label>
+        <div id="t-daily" class="bar-list"></div>
+      </div>
+
+      <div style="margin-top:16px">
+        <label style="font-size:12px;color:var(--muted);font-weight:500">\u6700\u8FD1\u6876\uFF0830 \u5206\u949F\u7C92\u5EA6\uFF09</label>
+        <div class="table-wrap">
+          <table class="data-table" id="t-buckets">
+            <thead><tr><th>\u65F6\u95F4</th><th>\u6765\u6E90</th><th>\u6A21\u578B</th><th>\u8F93\u5165</th><th>\u8F93\u51FA</th><th>\u7F13\u5B58</th><th>\u603B\u8BA1</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="hint" style="text-align:center;color:var(--muted);margin-top:24px">
+    \u6240\u6709\u51ED\u636E\u901A\u8FC7\u673A\u5668\u6307\u7EB9 AES-256-GCM \u52A0\u5BC6\u5B58\u50A8\u4E8E <code>~/.deepseek-plugins/credentials.enc</code>\uFF0C\u4EC5\u672C\u673A\u53EF\u89E3\u5BC6\u3002
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API = '';
+let state = { deepseekKeySet: false, models: [] };
+
+function $(id) { return document.getElementById(id); }
+
+function toast(msg, type) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.className = 'toast', 2200);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch {}
+  if (!res.ok) {
+    const msg = (data && data.error) || ('\u8BF7\u6C42\u5931\u8D25 (' + res.status + ')');
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function refresh() {
+  try {
+    state = await api('GET', '/api/config');
+    render();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function render() {
+  $('ds-key').value = '';
+  $('ds-key').placeholder = state.deepseekKeySet ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\uFF08\u5DF2\u8BBE\u7F6E\uFF0C\u7559\u7A7A\u5219\u4E0D\u4FEE\u6539\uFF09' : 'sk-...';
+
+  const list = $('model-list');
+  list.innerHTML = '';
+  if (state.models.length === 0) {
+    list.innerHTML = '<div class="empty">\u5C1A\u672A\u914D\u7F6E\u4EFB\u4F55\u591A\u6A21\u6001\u6A21\u578B\u3002\u70B9\u51FB\u4E0B\u65B9\u6309\u94AE\u6DFB\u52A0\u4E3B\u6A21\u578B\u6216\u5907\u9009\u6A21\u578B\u3002</div>';
+    return;
+  }
+  state.models.forEach((m, i) => list.appendChild(renderModel(m, i)));
+}
+
+function renderModel(m, i) {
+  const div = document.createElement('div');
+  div.className = 'model-item';
+  const isPrimary = m.role === 'primary';
+  const badge = isPrimary
+    ? '<span class="badge primary">\u4E3B\u6A21\u578B</span>'
+    : '<span class="badge fallback">\u5907\u9009 #' + (i - 1) + '</span>';
+
+  const upBtn = (!isPrimary && i > 1)
+    ? '<button class="ghost" title="\u4E0A\u79FB\uFF08\u63D0\u5347\u4F18\u5148\u7EA7\uFF09" onclick="move(' + i + ',-1)">\u2191</button>' : '';
+  const downBtn = (!isPrimary && i < state.models.length - 1)
+    ? '<button class="ghost" title="\u4E0B\u79FB\uFF08\u964D\u4F4E\u4F18\u5148\u7EA7\uFF09" onclick="move(' + i + ',1)">\u2193</button>' : '';
+
+  div.innerHTML =
+    '<div class="head">' +
+      '<div class="title">' + badge + '<span>' + (m.model || '(\u672A\u586B\u5199 model)') + '</span></div>' +
+      '<div class="actions">' + upBtn + downBtn +
+        '<button class="danger" onclick="removeModel(' + i + ')">\u5220\u9664</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="row">' +
+      '<div class="field"><label>Base URL</label>' +
+        '<input type="text" data-i="' + i + '" data-k="baseUrl" value="' + esc(m.baseUrl) + '" placeholder="https://api.openai.com/v1" />' +
+      '</div>' +
+      '<div class="field"><label>Model</label>' +
+        '<input type="text" data-i="' + i + '" data-k="model" value="' + esc(m.model) + '" placeholder="gpt-4o" />' +
+      '</div>' +
+      '<div class="field"><label>API Key<span class="pw-toggle" onclick="togglePw(this)">\u663E\u793A</span></label>' +
+        '<input type="password" data-i="' + i + '" data-k="apiKey" value="' + esc(m.apiKey) + '" placeholder="' + (m.apiKey ? '\u5DF2\u8BBE\u7F6E\uFF0C\u7559\u7A7A\u4E0D\u4FEE\u6539' : 'sk-...') + '" autocomplete="off" />' +
+      '</div>' +
+      '<div><button class="primary" onclick="saveModel(' + i + ')">\u4FDD\u5B58</button></div>' +
+    '</div>';
+  return div;
+}
+
+function togglePw(el) {
+  const inp = el.closest('.field').querySelector('input');
+  if (inp.type === 'password') { inp.type = 'text'; el.textContent = '\u9690\u85CF'; }
+  else { inp.type = 'password'; el.textContent = '\u663E\u793A'; }
+}
+
+async function toggleDsPw(el) {
+  const inp = $('ds-key');
+  if (inp.type === 'password') {
+    // \u5207\u6362\u4E3A\u53EF\u89C1\u65F6\uFF0C\u82E5\u8F93\u5165\u6846\u4E3A\u7A7A\u5219\u62C9\u53D6\u5DF2\u4FDD\u5B58\u7684 Key
+    if (!inp.value) {
+      try {
+        const data = await api('GET', '/api/deepseek-key');
+        inp.value = data.apiKey || '';
+      } catch (e) {
+        toast(e.message, 'err');
+        return;
+      }
+    }
+    inp.type = 'text';
+    el.textContent = '\u9690\u85CF';
+  } else {
+    inp.type = 'password';
+    el.textContent = '\u663E\u793A';
+  }
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function collectModel(i) {
+  const inputs = document.querySelectorAll('input[data-i="' + i + '"]');
+  const out = {};
+  inputs.forEach(inp => {
+    const k = inp.getAttribute('data-k');
+    let v = inp.value.trim();
+    if (k === 'apiKey' && v === '') v = undefined; // \u7559\u7A7A\u8868\u793A\u4E0D\u4FEE\u6539
+    out[k] = v;
+  });
+  return out;
+}
+
+async function saveModel(i) {
+  const m = state.models[i];
+  const patch = collectModel(i);
+  try {
+    await api('PUT', '/api/models/' + i, patch);
+    toast('\u5DF2\u4FDD\u5B58', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function removeModel(i) {
+  const m = state.models[i];
+  const label = m.role === 'primary' ? '\u4E3B\u6A21\u578B' : ('\u5907\u9009 #' + (i - 1));
+  if (!confirm('\u786E\u5B9A\u5220\u9664 ' + label + ' (' + (m.model || '\u672A\u547D\u540D') + ') \u5417\uFF1F')) return;
+  try {
+    await api('DELETE', '/api/models/' + i);
+    toast('\u5DF2\u5220\u9664', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function move(i, dir) {
+  try {
+    await api('POST', '/api/models/' + i + '/move', { dir });
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function openAddFallback() {
+  const list = $('model-list');
+  const i = state.models.length;
+  const div = document.createElement('div');
+  div.className = 'model-item';
+  div.innerHTML =
+    '<div class="head"><div class="title"><span class="badge fallback">\u65B0\u5907\u9009</span></div>' +
+      '<div class="actions"><button class="ghost" onclick="this.closest(\\'.model-item\\').remove()">\u53D6\u6D88</button></div>' +
+    '</div>' +
+    '<div class="row">' +
+      '<div class="field"><label>Base URL</label><input type="text" data-new="baseUrl" placeholder="https://api.openai.com/v1" /></div>' +
+      '<div class="field"><label>Model</label><input type="text" data-new="model" placeholder="gpt-4o" /></div>' +
+      '<div class="field"><label>API Key</label><input type="password" data-new="apiKey" placeholder="sk-..." autocomplete="off" /></div>' +
+      '<div><button class="primary" onclick="addFallback(this)">\u6DFB\u52A0</button></div>' +
+    '</div>';
+  list.appendChild(div);
+  div.querySelector('input[data-new="baseUrl"]').focus();
+}
+
+async function addFallback(btn) {
+  const item = btn.closest('.model-item');
+  const baseUrl = item.querySelector('input[data-new="baseUrl"]').value.trim();
+  const model = item.querySelector('input[data-new="model"]').value.trim();
+  const apiKey = item.querySelector('input[data-new="apiKey"]').value.trim();
+  if (!baseUrl || !model || !apiKey) {
+    toast('\u8BF7\u586B\u5199 base_url / model / API Key', 'err');
+    return;
+  }
+  try {
+    await api('POST', '/api/models', { role: 'fallback', baseUrl, model, apiKey });
+    toast('\u5DF2\u6DFB\u52A0', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function saveDeepSeekKey() {
+  const v = $('ds-key').value.trim();
+  if (!v) { toast('\u8BF7\u8F93\u5165 API Key\uFF0C\u6216\u7559\u7A7A\u4FDD\u6301\u4E0D\u53D8', 'err'); return; }
+  try {
+    await api('PUT', '/api/deepseek-key', { apiKey: v });
+    toast('\u5DF2\u4FDD\u5B58', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function fmtNum(n) {
+  n = Number(n) || 0;
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function renderBarList(items, containerId) {
+  const el = $(containerId);
+  if (!items || items.length === 0) {
+    el.innerHTML = '<div class="empty" style="padding:8px">\u6682\u65E0\u6570\u636E</div>';
+    return;
+  }
+  const max = Math.max(...items.map(i => i.tokens || 0), 1);
+  el.innerHTML = items.map(i => {
+    const pct = Math.round(((i.tokens || 0) / max) * 100);
+    return '<div class="bar-row">' +
+      '<span class="name" title="' + esc(i.name) + '">' + esc(i.name) + '</span>' +
+      '<span class="track"><span class="fill" style="width:' + pct + '%"></span></span>' +
+      '<span class="val">' + fmtNum(i.tokens) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+async function loadToken() {
+  $('token-loading').style.display = 'block';
+  $('token-body').style.display = 'none';
+  try {
+    const summary = await api('GET', '/api/token/summary');
+    $('t-today').textContent = fmtNum(summary.today);
+    $('t-input').textContent = fmtNum(summary.today_input);
+    $('t-output').textContent = fmtNum(summary.today_output);
+    $('t-cached').textContent = fmtNum(summary.today_cached);
+    $('t-7d').textContent = fmtNum(summary.seven_day);
+    $('t-all').textContent = fmtNum(summary.all_time);
+    renderBarList(summary.by_source || [], 't-by-source');
+    renderBarList(summary.by_model || [], 't-by-model');
+
+    const rep = await api('GET', '/api/token/report?days=7');
+    const daily = (rep.report || []).map(d => ({ name: d.date.slice(5), tokens: d.total_tokens }));
+    renderBarList(daily, 't-daily');
+
+    const bk = await api('GET', '/api/token/buckets?limit=30');
+    const tbody = $('t-buckets').querySelector('tbody');
+    const buckets = bk.buckets || [];
+    if (buckets.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">\u6682\u65E0\u6876\u6570\u636E</td></tr>';
+    } else {
+      tbody.innerHTML = buckets.map(b => {
+        const t = (b.bucket_start || '').replace('T', ' ').replace(':00.000Z', '').slice(5, 16);
+        return '<tr>' +
+          '<td>' + esc(t) + '</td>' +
+          '<td>' + esc(b.source) + '</td>' +
+          '<td>' + esc(b.model) + '</td>' +
+          '<td class="num">' + fmtNum(b.input_tokens) + '</td>' +
+          '<td class="num">' + fmtNum(b.output_tokens) + '</td>' +
+          '<td class="num">' + fmtNum(b.cached_input_tokens) + '</td>' +
+          '<td class="num">' + fmtNum(b.total_tokens) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    $('token-loading').style.display = 'none';
+    $('token-body').style.display = 'block';
+  } catch (e) {
+    $('token-loading').textContent = '\u52A0\u8F7D\u5931\u8D25: ' + e.message;
+  }
+}
+
+refresh();
+loadToken();
+loadToken();
+</script>
+</body>
+</html>
+`;
+
+// src/gui/service.ts
+var CONFIG_DIR2 = (0, import_node_path.join)((0, import_node_os.homedir)(), ".deepseek-plugins");
+var PID_FILE = (0, import_node_path.join)(CONFIG_DIR2, "service.pid");
+var PORT_FILE = (0, import_node_path.join)(CONFIG_DIR2, "service.port");
+var MENUBAR_PID_FILE = (0, import_node_path.join)(CONFIG_DIR2, "menubar.pid");
+var DEEPSEEK_SERVICE = "deepseek";
+var VISION_PREFIX = "vision";
+function readModels(all) {
+  const models = [];
+  const pBase = all[`${VISION_PREFIX}.base_url`] ?? "";
+  const pModel = all[`${VISION_PREFIX}.model`] ?? "";
+  const pKey = all[VISION_PREFIX] ?? "";
+  if (pBase || pModel || pKey) {
+    models.push({ role: "primary", index: -1, baseUrl: pBase, model: pModel, apiKey: pKey });
+  }
+  for (let i = 0; ; i++) {
+    const prefix = `${VISION_PREFIX}.fallback.${i}`;
+    const baseUrl = all[`${prefix}.base_url`] ?? "";
+    const model = all[`${prefix}.model`] ?? "";
+    const apiKey = all[prefix] ?? "";
+    if (!baseUrl && !model && !apiKey) break;
+    models.push({ role: "fallback", index: i, baseUrl, model, apiKey });
+  }
+  return models;
+}
+async function writePrimary(patch) {
+  if (patch.baseUrl !== void 0) await setKey(`${VISION_PREFIX}.base_url`, patch.baseUrl);
+  if (patch.model !== void 0) await setKey(`${VISION_PREFIX}.model`, patch.model);
+  if (patch.apiKey) await setKey(VISION_PREFIX, patch.apiKey);
+}
+async function writeFallback(index, patch) {
+  const prefix = `${VISION_PREFIX}.fallback.${index}`;
+  if (patch.baseUrl !== void 0) await setKey(`${prefix}.base_url`, patch.baseUrl);
+  if (patch.model !== void 0) await setKey(`${prefix}.model`, patch.model);
+  if (patch.apiKey) await setKey(prefix, patch.apiKey);
+}
+async function appendFallback(entry) {
+  const all = await getAllKeys();
+  let idx = 0;
+  while (all[`${VISION_PREFIX}.fallback.${idx}.base_url`] || all[`${VISION_PREFIX}.fallback.${idx}.model`] || all[`${VISION_PREFIX}.fallback.${idx}`]) {
+    idx++;
+  }
+  const prefix = `${VISION_PREFIX}.fallback.${idx}`;
+  await setKey(`${prefix}.base_url`, entry.baseUrl);
+  await setKey(`${prefix}.model`, entry.model);
+  await setKey(prefix, entry.apiKey);
+  return idx;
+}
+async function deleteModel(pos) {
+  const all = await getAllKeys();
+  const models = readModels(all);
+  if (pos < 0 || pos >= models.length) return false;
+  const target = models[pos];
+  if (!target) return false;
+  if (target.role === "primary") {
+    await unsetKey(VISION_PREFIX);
+    await unsetKey(`${VISION_PREFIX}.base_url`);
+    await unsetKey(`${VISION_PREFIX}.model`);
+    return true;
+  }
+  const idx = target.index;
+  const prefix = `${VISION_PREFIX}.fallback.${idx}`;
+  await unsetKey(prefix);
+  await unsetKey(`${prefix}.base_url`);
+  await unsetKey(`${prefix}.model`);
+  for (let i = idx + 1; ; i++) {
+    const src = `${VISION_PREFIX}.fallback.${i}`;
+    const has = all[`${src}.base_url`] || all[`${src}.model`] || all[src];
+    if (!has) break;
+    const dst = `${VISION_PREFIX}.fallback.${i - 1}`;
+    const k = all[src];
+    const u = all[`${src}.base_url`];
+    const m = all[`${src}.model`];
+    if (k) await setKey(dst, k);
+    if (u) await setKey(`${dst}.base_url`, u);
+    if (m) await setKey(`${dst}.model`, m);
+    await unsetKey(src);
+    await unsetKey(`${src}.base_url`);
+    await unsetKey(`${src}.model`);
+  }
+  return true;
+}
+async function moveModel(pos, dir) {
+  const all = await getAllKeys();
+  const models = readModels(all);
+  if (pos <= 0 || pos >= models.length) return false;
+  const other = pos + dir;
+  if (other <= 0 || other >= models.length) return false;
+  const a = models[pos];
+  const b = models[other];
+  if (!a || !b || a.role !== "fallback" || b.role !== "fallback") return false;
+  const aPrefix = `${VISION_PREFIX}.fallback.${a.index}`;
+  const bPrefix = `${VISION_PREFIX}.fallback.${b.index}`;
+  const swap = async (suffix) => {
+    const av = all[`${aPrefix}${suffix}`] ?? "";
+    const bv = all[`${bPrefix}${suffix}`] ?? "";
+    if (bv) await setKey(`${aPrefix}${suffix}`, bv);
+    else await unsetKey(`${aPrefix}${suffix}`);
+    if (av) await setKey(`${bPrefix}${suffix}`, av);
+    else await unsetKey(`${bPrefix}${suffix}`);
+  };
+  await swap("");
+  await swap(".base_url");
+  await swap(".model");
+  return true;
+}
+function sendJson(res, status, body) {
+  const data = JSON.stringify(body);
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(data)
+  });
+  res.end(data);
+}
+function sendHtml(res) {
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": Buffer.byteLength(gui_default)
+  });
+  res.end(gui_default);
+}
+async function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf-8");
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+function startService() {
+  const server = (0, import_node_http.createServer)(async (req, res) => {
+    const url = req.url ?? "/";
+    const method = req.method ?? "GET";
+    const host = req.headers.host ?? "";
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) {
+      sendJson(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u8BBF\u95EE" });
+      return;
+    }
+    try {
+      if (method === "GET" && url === "/health") {
+        sendJson(res, 200, { ok: true, pid: process.pid });
+        return;
+      }
+      if (method === "GET" && (url === "/" || url === "/index.html")) {
+        sendHtml(res);
+        return;
+      }
+      if (method === "GET" && url === "/api/config") {
+        const all = await getAllKeys();
+        const resp = {
+          deepseekKeySet: !!all[DEEPSEEK_SERVICE],
+          models: readModels(all)
+        };
+        sendJson(res, 200, resp);
+        return;
+      }
+      if (method === "GET" && url === "/api/deepseek-key") {
+        const apiKey = await getKey(DEEPSEEK_SERVICE);
+        sendJson(res, 200, { apiKey: apiKey ?? "" });
+        return;
+      }
+      if (method === "PUT" && url === "/api/deepseek-key") {
+        const body = await readBody(req);
+        if (!body.apiKey || !body.apiKey.trim()) {
+          sendJson(res, 400, { error: "apiKey \u4E0D\u80FD\u4E3A\u7A7A" });
+          return;
+        }
+        await setKey(DEEPSEEK_SERVICE, body.apiKey.trim());
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      if (method === "POST" && url === "/api/models") {
+        const body = await readBody(req);
+        if (body.role !== "fallback") {
+          sendJson(res, 400, { error: "\u4EC5\u652F\u6301\u6DFB\u52A0\u5907\u9009\u6A21\u578B\uFF08role=fallback\uFF09" });
+          return;
+        }
+        if (!body.baseUrl?.trim() || !body.model?.trim() || !body.apiKey?.trim()) {
+          sendJson(res, 400, { error: "base_url / model / apiKey \u5747\u4E3A\u5FC5\u586B" });
+          return;
+        }
+        const idx = await appendFallback({
+          baseUrl: body.baseUrl.trim(),
+          model: body.model.trim(),
+          apiKey: body.apiKey.trim()
+        });
+        sendJson(res, 200, { ok: true, index: idx });
+        return;
+      }
+      const putMatch = url.match(/^\/api\/models\/(\d+)$/);
+      if (method === "PUT" && putMatch) {
+        const pos = parseInt(putMatch[1], 10);
+        const all = await getAllKeys();
+        const models = readModels(all);
+        if (pos < 0 || pos >= models.length) {
+          sendJson(res, 404, { error: "\u6A21\u578B\u4E0D\u5B58\u5728" });
+          return;
+        }
+        const body = await readBody(req);
+        const target = models[pos];
+        const patch = {};
+        if (body.baseUrl !== void 0) patch.baseUrl = body.baseUrl.trim();
+        if (body.model !== void 0) patch.model = body.model.trim();
+        if (body.apiKey !== void 0 && body.apiKey !== "") patch.apiKey = body.apiKey.trim();
+        if (target.role === "primary") await writePrimary(patch);
+        else await writeFallback(target.index, patch);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      const delMatch = url.match(/^\/api\/models\/(\d+)$/);
+      if (method === "DELETE" && delMatch) {
+        const pos = parseInt(delMatch[1], 10);
+        const ok = await deleteModel(pos);
+        if (!ok) {
+          sendJson(res, 404, { error: "\u6A21\u578B\u4E0D\u5B58\u5728" });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      const moveMatch = url.match(/^\/api\/models\/(\d+)\/move$/);
+      if (method === "POST" && moveMatch) {
+        const pos = parseInt(moveMatch[1], 10);
+        const body = await readBody(req);
+        const dir = body.dir === -1 ? -1 : 1;
+        const ok = await moveModel(pos, dir);
+        if (!ok) {
+          sendJson(res, 400, { error: "\u65E0\u6CD5\u79FB\u52A8\u5230\u8BE5\u4F4D\u7F6E" });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      if (method === "GET" && url === "/api/token/summary") {
+        scanAndAggregate();
+        const summary = getSummary();
+        sendJson(res, 200, summary);
+        return;
+      }
+      if (method === "GET" && url.startsWith("/api/token/buckets")) {
+        const u = new URL(url, "http://localhost");
+        const limit = parseInt(u.searchParams.get("limit") ?? "100", 10) || 100;
+        const buckets = getBuckets().slice(-limit).reverse();
+        sendJson(res, 200, { buckets });
+        return;
+      }
+      if (method === "GET" && url.startsWith("/api/token/report")) {
+        const u = new URL(url, "http://localhost");
+        const days = parseInt(u.searchParams.get("days") ?? "7", 10) || 7;
+        const report = generateDailyReport(days);
+        sendJson(res, 200, { report });
+        return;
+      }
+      if (method === "POST" && url === "/api/token/scan") {
+        const result = scanAndAggregate();
+        sendJson(res, 200, result);
+        return;
+      }
+      if (method === "GET" && url === "/api/balance") {
+        const { result, error } = await fetchBalance();
+        if (error) sendJson(res, 200, { result: null, error });
+        else sendJson(res, 200, { result, error: null });
+        return;
+      }
+      sendJson(res, 404, { error: "Not Found" });
+    } catch (e) {
+      sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      resolve(port);
+    });
+  });
+}
+function ensureConfigDir() {
+  if (!(0, import_node_fs.existsSync)(CONFIG_DIR2)) (0, import_node_fs.mkdirSync)(CONFIG_DIR2, { recursive: true, mode: 448 });
+}
+function isProcessAlive(pid) {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function readPortFile() {
+  try {
+    const port = parseInt((0, import_node_fs.readFileSync)(PORT_FILE, "utf-8").trim(), 10);
+    return isNaN(port) ? null : port;
+  } catch {
+    return null;
+  }
+}
+async function probeService(port) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+function cleanupStaleFiles() {
+  try {
+    if ((0, import_node_fs.existsSync)(PID_FILE)) {
+      const pid = parseInt((0, import_node_fs.readFileSync)(PID_FILE, "utf-8").trim(), 10);
+      if (!isProcessAlive(pid)) {
+        (0, import_node_fs.unlinkSync)(PID_FILE);
+        if ((0, import_node_fs.existsSync)(PORT_FILE)) (0, import_node_fs.unlinkSync)(PORT_FILE);
+      }
+    }
+  } catch {
+  }
+}
+async function ensureServiceRunning(cliPath) {
+  ensureConfigDir();
+  cleanupStaleFiles();
+  const existingPort = readPortFile();
+  if (existingPort && await probeService(existingPort)) {
+    return { url: `http://127.0.0.1:${existingPort}`, port: existingPort, started: false };
+  }
+  const child = (0, import_node_child_process.spawn)(cliPath, ["__daemon"], {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+  const deadline = Date.now() + 1e4;
+  while (Date.now() < deadline) {
+    const port = readPortFile();
+    if (port && await probeService(port)) {
+      return { url: `http://127.0.0.1:${port}`, port, started: true };
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error("\u540E\u53F0\u670D\u52A1\u542F\u52A8\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5\u65E5\u5FD7\u6216\u624B\u52A8\u8FD0\u884C deepseek-plugin-cli gui");
+}
+async function runAsDaemon() {
+  ensureConfigDir();
+  cleanupStaleFiles();
+  const port = await startService();
+  (0, import_node_fs.writeFileSync)(PID_FILE, String(process.pid), { mode: 384 });
+  (0, import_node_fs.writeFileSync)(PORT_FILE, String(port), { mode: 384 });
+  const cleanup = () => {
+    try {
+      if ((0, import_node_fs.existsSync)(PID_FILE)) (0, import_node_fs.unlinkSync)(PID_FILE);
+    } catch {
+    }
+    try {
+      if ((0, import_node_fs.existsSync)(PORT_FILE)) (0, import_node_fs.unlinkSync)(PORT_FILE);
+    } catch {
+    }
+    process.exit(0);
+  };
+  process.on("SIGTERM", cleanup);
+  process.on("SIGINT", cleanup);
+  await new Promise(() => {
+  });
+}
+function isMenuBarRunning() {
+  try {
+    if (!(0, import_node_fs.existsSync)(MENUBAR_PID_FILE)) return false;
+    const pid = parseInt((0, import_node_fs.readFileSync)(MENUBAR_PID_FILE, "utf-8").trim(), 10);
+    return isProcessAlive(pid);
+  } catch {
+    return false;
+  }
+}
+function writeMenuBarPid(pid) {
+  ensureConfigDir();
+  (0, import_node_fs.writeFileSync)(MENUBAR_PID_FILE, String(pid), { mode: 384 });
+}
+function openBrowser(url) {
+  const cmd = (0, import_node_os.platform)() === "darwin" ? "open" : (0, import_node_os.platform)() === "win32" ? "cmd" : "xdg-open";
+  const args = (0, import_node_os.platform)() === "win32" ? ["/c", "start", "", url] : [url];
+  try {
+    const child = (0, import_node_child_process.spawn)(cmd, args, { detached: true, stdio: "ignore" });
+    child.unref();
+  } catch {
+  }
+}
+
 // ../../node_modules/.pnpm/@inquirer+core@10.3.2_@types+node@22.20.1/node_modules/@inquirer/core/dist/esm/lib/key.js
 var isUpKey = (key, keybindings = []) => (
   // The up key
@@ -15824,9 +17442,9 @@ var esm_default2 = createPrompt((config, done) => {
 // ../../node_modules/.pnpm/@inquirer+external-editor@1.0.3_@types+node@22.20.1/node_modules/@inquirer/external-editor/dist/esm/index.js
 var import_chardet = __toESM(require_lib2(), 1);
 var import_child_process = require("child_process");
-var import_fs = require("fs");
-var import_node_path = __toESM(require("path"), 1);
-var import_node_os = __toESM(require("os"), 1);
+var import_fs3 = require("fs");
+var import_node_path2 = __toESM(require("path"), 1);
+var import_node_os2 = __toESM(require("os"), 1);
 var import_node_crypto = require("crypto");
 var import_iconv_lite = __toESM(require_lib3(), 1);
 
@@ -15956,13 +17574,13 @@ var ExternalEditor = class {
   }
   createTemporaryFile() {
     try {
-      const baseDir = this.fileOptions.dir ?? import_node_os.default.tmpdir();
+      const baseDir = this.fileOptions.dir ?? import_node_os2.default.tmpdir();
       const id = (0, import_node_crypto.randomUUID)();
       const prefix = sanitizeAffix(this.fileOptions.prefix);
       const postfix = sanitizeAffix(this.fileOptions.postfix);
       const filename = `${prefix}${id}${postfix}`;
-      const candidate = import_node_path.default.resolve(baseDir, filename);
-      const baseResolved = import_node_path.default.resolve(baseDir) + import_node_path.default.sep;
+      const candidate = import_node_path2.default.resolve(baseDir, filename);
+      const baseResolved = import_node_path2.default.resolve(baseDir) + import_node_path2.default.sep;
       if (!candidate.startsWith(baseResolved)) {
         throw new Error("Resolved temporary file escaped the base directory");
       }
@@ -15971,14 +17589,14 @@ var ExternalEditor = class {
       if (Object.prototype.hasOwnProperty.call(this.fileOptions, "mode")) {
         opt.mode = this.fileOptions.mode;
       }
-      (0, import_fs.writeFileSync)(this.tempFile, this.text, opt);
+      (0, import_fs3.writeFileSync)(this.tempFile, this.text, opt);
     } catch (createFileError) {
       throw new CreateFileError(createFileError);
     }
   }
   readTemporaryFile() {
     try {
-      const tempFileBuffer = (0, import_fs.readFileSync)(this.tempFile);
+      const tempFileBuffer = (0, import_fs3.readFileSync)(this.tempFile);
       if (tempFileBuffer.length === 0) {
         this.text = "";
       } else {
@@ -15994,7 +17612,7 @@ var ExternalEditor = class {
   }
   removeTemporaryFile() {
     try {
-      (0, import_fs.unlinkSync)(this.tempFile);
+      (0, import_fs3.unlinkSync)(this.tempFile);
     } catch (removeFileError) {
       throw new RemoveFileError(removeFileError);
     }
@@ -16891,127 +18509,9 @@ var esm_default11 = createPrompt((config, done) => {
   return `${lines}${cursorHide}`;
 });
 
-// ../shared/dist/chunk-3PAYRQTL.js
-var import_crypto = require("crypto");
-var import_fs2 = require("fs");
-var import_path = require("path");
-var import_os = require("os");
-var CONFIG_DIR = (0, import_path.join)((0, import_os.homedir)(), ".deepseek-plugins");
-var CREDENTIALS_FILE = (0, import_path.join)(CONFIG_DIR, "credentials.enc");
-var FILE_MAGIC = Buffer.from([68, 83, 67, 49]);
-var FILE_VERSION = 1;
-var HEADER_SIZE = FILE_MAGIC.length + 1;
-function getMachineFingerprint() {
-  return `${(0, import_os.hostname)()}:${(0, import_os.userInfo)().username}:${(0, import_os.platform)()}:${(0, import_os.arch)()}`;
-}
-function deriveKey(salt) {
-  return (0, import_crypto.pbkdf2Sync)(getMachineFingerprint(), salt, 1e5, 32, "sha256");
-}
-var cache = null;
-function getFileMtime() {
-  try {
-    return (0, import_fs2.statSync)(CREDENTIALS_FILE).mtimeMs;
-  } catch {
-    return 0;
-  }
-}
-function readCredentials() {
-  const mtime = getFileMtime();
-  if (cache && cache.mtime === mtime) {
-    return cache.creds;
-  }
-  if (!(0, import_fs2.existsSync)(CREDENTIALS_FILE)) {
-    cache = { mtime, creds: {} };
-    return cache.creds;
-  }
-  const data = (0, import_fs2.readFileSync)(CREDENTIALS_FILE);
-  const hasHeader = data.length >= HEADER_SIZE && data.subarray(0, FILE_MAGIC.length).equals(FILE_MAGIC);
-  let salt, iv, authTag, encrypted;
-  if (hasHeader) {
-    if (data.length < HEADER_SIZE + 44) {
-      cache = { mtime, creds: {} };
-      return cache.creds;
-    }
-    const offset = HEADER_SIZE;
-    salt = data.subarray(offset, offset + 16);
-    iv = data.subarray(offset + 16, offset + 28);
-    authTag = data.subarray(offset + 28, offset + 44);
-    encrypted = data.subarray(offset + 44);
-  } else {
-    if (data.length < 44) {
-      cache = { mtime, creds: {} };
-      return cache.creds;
-    }
-    salt = data.subarray(0, 16);
-    iv = data.subarray(16, 28);
-    authTag = data.subarray(28, 44);
-    encrypted = data.subarray(44);
-  }
-  try {
-    const key = deriveKey(salt);
-    const decipher = (0, import_crypto.createDecipheriv)("aes-256-gcm", key, iv);
-    decipher.setAuthTag(authTag);
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    const creds = JSON.parse(decrypted.toString("utf-8"));
-    cache = { mtime, creds };
-    return creds;
-  } catch {
-    console.warn(
-      "\u26A0 \u51ED\u636E\u6587\u4EF6\u89E3\u5BC6\u5931\u8D25\uFF0C\u6240\u6709\u5DF2\u5B58\u50A8\u7684 API Key \u5C06\u4E0D\u53EF\u7528\u3002\u53EF\u80FD\u539F\u56E0\uFF1A\u673A\u5668\u73AF\u5883\u53D8\u5316\uFF08hostname/\u5E73\u53F0/\u67B6\u6784\uFF09\u6216\u6587\u4EF6\u635F\u574F\u3002\u8BF7\u91CD\u65B0\u8FD0\u884C auth set \u914D\u7F6E\u5404\u670D\u52A1\u7684 API Key\u3002"
-    );
-    cache = { mtime, creds: {} };
-    return cache.creds;
-  }
-}
-function writeCredentials(creds) {
-  if (!(0, import_fs2.existsSync)(CONFIG_DIR)) {
-    (0, import_fs2.mkdirSync)(CONFIG_DIR, { recursive: true, mode: 448 });
-  }
-  const salt = (0, import_crypto.randomBytes)(16);
-  const iv = (0, import_crypto.randomBytes)(12);
-  const key = deriveKey(salt);
-  const cipher = (0, import_crypto.createCipheriv)("aes-256-gcm", key, iv);
-  const plaintext = JSON.stringify(creds);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  const output = Buffer.concat([FILE_MAGIC, Buffer.from([FILE_VERSION]), salt, iv, authTag, encrypted]);
-  (0, import_fs2.writeFileSync)(CREDENTIALS_FILE, output, { mode: 384 });
-  cache = { mtime: getFileMtime(), creds };
-}
-async function setKey(service, key) {
-  const creds = readCredentials();
-  creds[service] = key;
-  writeCredentials(creds);
-}
-async function getKey(service) {
-  const creds = readCredentials();
-  return creds[service] ?? null;
-}
-async function getAllKeys() {
-  return { ...readCredentials() };
-}
-async function unsetKey(service) {
-  const creds = readCredentials();
-  if (service in creds) {
-    delete creds[service];
-    if (Object.keys(creds).length === 0) {
-      try {
-        (0, import_fs2.unlinkSync)(CREDENTIALS_FILE);
-      } catch {
-      }
-      cache = null;
-    } else {
-      writeCredentials(creds);
-    }
-  }
-}
-async function listServices() {
-  return Object.keys(readCredentials());
-}
-
 // src/commands/auth.ts
-function registerAuth(program3) {
-  const auth = program3.command("auth").description("API Key \u7BA1\u7406\uFF08\u52A0\u5BC6\u672C\u5730\u6587\u4EF6\u5B58\u50A8\uFF09");
+function registerAuth(program2) {
+  const auth = program2.command("auth").description("API Key \u7BA1\u7406\uFF08\u52A0\u5BC6\u672C\u5730\u6587\u4EF6\u5B58\u50A8\uFF09");
   auth.command("set <service>").description("\u4EA4\u4E92\u5F0F\u8BBE\u7F6E API Key\uFF08\u9690\u85CF\u56DE\u663E\uFF09").action(async (service) => {
     const key = await esm_default9({
       message: `\u8F93\u5165 ${service} \u7684 API Key:`,
@@ -17118,7 +18618,7 @@ function missingConfigHint() {
 
 // ../vision-helper/dist/chunk-T6JCOMB3.js
 var import_promises = require("fs/promises");
-var import_path2 = require("path");
+var import_path3 = require("path");
 function isPassthroughInput(input) {
   return /^https?:\/\//i.test(input) || /^data:/i.test(input);
 }
@@ -17127,7 +18627,7 @@ async function normalizeToDataUri(input, mimeByExt, typeLabel) {
     return input;
   }
   const buf = await (0, import_promises.readFile)(input);
-  const ext = (0, import_path2.extname)(input).toLowerCase();
+  const ext = (0, import_path3.extname)(input).toLowerCase();
   const mime = mimeByExt[ext];
   if (!mime) {
     throw new Error(`\u4E0D\u652F\u6301\u7684${typeLabel}\u683C\u5F0F: ${ext}`);
@@ -17136,7 +18636,7 @@ async function normalizeToDataUri(input, mimeByExt, typeLabel) {
 }
 
 // ../vision-helper/dist/chunk-KP7F6F4Q.js
-var import_path3 = require("path");
+var import_path4 = require("path");
 var MIME_BY_EXT = {
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
@@ -17156,7 +18656,7 @@ var FORMAT_BY_EXT = {
   ".webm": "webm"
 };
 function guessAudioFormat(filePath) {
-  return FORMAT_BY_EXT[(0, import_path3.extname)(filePath).toLowerCase()] ?? "mp3";
+  return FORMAT_BY_EXT[(0, import_path4.extname)(filePath).toLowerCase()] ?? "mp3";
 }
 async function normalizeAudio(input) {
   return normalizeToDataUri(input, MIME_BY_EXT, "\u97F3\u9891");
@@ -17176,7 +18676,7 @@ async function normalizeImage(input) {
 }
 
 // ../vision-helper/dist/chunk-FOMKOAKZ.js
-var import_path4 = require("path");
+var import_path5 = require("path");
 var MIME_BY_EXT3 = {
   ".pdf": "application/pdf"
 };
@@ -17187,7 +18687,7 @@ function extractPdfFilename(input) {
   if (/^data:/i.test(input)) {
     return "document.pdf";
   }
-  const name = (0, import_path4.basename)(input);
+  const name = (0, import_path5.basename)(input);
   return name.endsWith(".pdf") ? name : `${name}.pdf`;
 }
 
@@ -17308,8 +18808,8 @@ ${errors.join("\n")}`
 }
 
 // src/commands/vision.ts
-function registerVision(program3) {
-  program3.command("vision").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u56FE\u7247\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BC6\u56FE\u80FD\u529B\uFF08\u4E0E audio/pdf \u5171\u4EAB\u6A21\u578B\u914D\u7F6E\uFF09").argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PROMPT).option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
+function registerVision(program2) {
+  program2.command("vision").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u56FE\u7247\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BC6\u56FE\u80FD\u529B\uFF08\u4E0E audio/pdf \u5171\u4EAB\u6A21\u578B\u914D\u7F6E\uFF09").argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PROMPT).option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
     if (!["low", "high"].includes(opts.detail)) {
       console.error("\u9519\u8BEF\uFF1A--detail \u4EC5\u652F\u6301 low \u6216 high");
       process.exit(1);
@@ -17335,8 +18835,8 @@ function registerVision(program3) {
 }
 
 // src/commands/multimodal.ts
-function registerMultimodal(program3) {
-  const multimodal = program3.command("multimodal").description("\u7BA1\u7406\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\uFF08base_url / model / \u5907\u9009\u5BB9\u707E\uFF09\uFF0C\u540C\u65F6\u670D\u52A1 vision/audio/pdf");
+function registerMultimodal(program2) {
+  const multimodal = program2.command("multimodal").description("\u7BA1\u7406\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\uFF08base_url / model / \u5907\u9009\u5BB9\u707E\uFF09\uFF0C\u540C\u65F6\u670D\u52A1 vision/audio/pdf");
   multimodal.command("config").description("\u914D\u7F6E\u4E3B\u591A\u6A21\u6001\u6A21\u578B base_url \u548C model\uFF08\u540C\u65F6\u670D\u52A1 vision/audio/pdf\uFF09").option("-u, --base-url <url>", "\u591A\u6A21\u6001\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").option("-m, --model <name>", "\u591A\u6A21\u6001\u6A21\u578B\u540D\u79F0").action(async (opts) => {
     if (!opts.baseUrl && !opts.model) {
       console.error("\u8BF7\u63D0\u4F9B --base-url \u6216 --model");
@@ -17385,8 +18885,8 @@ function registerMultimodal(program3) {
 
 // src/commands/audio.ts
 var DEFAULT_AUDIO_PROMPT = "\u8BF7\u9010\u5B57\u8F6C\u5199\uFF08ASR\uFF09\u8FD9\u6BB5\u97F3\u9891\u4E2D\u6240\u8BF4\u7684\u6BCF\u4E00\u53E5\u8BDD\uFF0C\u539F\u6837\u8F93\u51FA\u6587\u5B57\u5185\u5BB9\uFF0C\u4E0D\u8981\u603B\u7ED3\u3001\u4E0D\u8981\u7FFB\u8BD1\u3001\u4E0D\u8981\u8865\u5145\u8BF4\u660E\u3002";
-function registerAudio(program3) {
-  program3.command("audio").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u97F3\u9891\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BED\u97F3\u8BC6\u522B\u80FD\u529B").argument("<input>", "\u97F3\u9891\u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9\u97F3\u9891\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_AUDIO_PROMPT).action(async (input, opts) => {
+function registerAudio(program2) {
+  program2.command("audio").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u97F3\u9891\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BED\u97F3\u8BC6\u522B\u80FD\u529B").argument("<input>", "\u97F3\u9891\u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9\u97F3\u9891\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_AUDIO_PROMPT).action(async (input, opts) => {
     const configs = await loadAllConfigs();
     if (configs.length === 0) {
       console.error(missingConfigHint());
@@ -17408,8 +18908,8 @@ function registerAudio(program3) {
 
 // src/commands/pdf.ts
 var DEFAULT_PDF_PROMPT = "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u4E2A PDF \u6587\u6863\u7684\u5185\u5BB9\u3002";
-function registerPdf(program3) {
-  program3.command("pdf").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790 PDF \u6587\u6863\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u6587\u6863\u7406\u89E3\u80FD\u529B").argument("<input>", "PDF \u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9 PDF \u6587\u6863\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PDF_PROMPT).action(async (input, opts) => {
+function registerPdf(program2) {
+  program2.command("pdf").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790 PDF \u6587\u6863\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u6587\u6863\u7406\u89E3\u80FD\u529B").argument("<input>", "PDF \u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9 PDF \u6587\u6863\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PDF_PROMPT).action(async (input, opts) => {
     const configs = await loadAllConfigs();
     if (configs.length === 0) {
       console.error(missingConfigHint());
@@ -17429,51 +18929,9 @@ function registerPdf(program3) {
   });
 }
 
-// ../shared/dist/balance.js
-var BALANCE_URL = "https://api.deepseek.com/user/balance";
-function formatBalance(s, currency) {
-  const n = parseFloat(s);
-  const symbol = currency === "CNY" ? "\xA5" : currency === "USD" ? "$" : "";
-  if (isNaN(n)) return `${symbol}${s}`;
-  if (n >= 1e3) return `${symbol}${n.toFixed(0)}`;
-  if (n >= 10) return `${symbol}${n.toFixed(1)}`;
-  return `${symbol}${n.toFixed(2)}`;
-}
-async function fetchBalance() {
-  try {
-    const apiKey = await getKey("deepseek");
-    if (!apiKey) {
-      return { result: null, error: "\u672A\u914D\u7F6E API Key\uFF0C\u8BF7\u6267\u884C: deepseek-plugin-cli auth set deepseek" };
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3e4);
-    const resp = await fetch(BALANCE_URL, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      signal: controller.signal
-    }).finally(() => clearTimeout(timer));
-    if (!resp.ok) {
-      return { result: null, error: `API \u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})` };
-    }
-    const data = await resp.json();
-    return {
-      result: {
-        isAvailable: data.is_available,
-        balances: data.balance_infos.map((b) => ({
-          currency: b.currency,
-          totalBalance: b.total_balance,
-          grantedBalance: b.granted_balance,
-          toppedUpBalance: b.topped_up_balance
-        }))
-      }
-    };
-  } catch (err) {
-    return { result: null, error: `\u7F51\u7EDC\u9519\u8BEF: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-
 // src/commands/balance.ts
-function registerBalance(program3) {
-  program3.command("balance").description("\u67E5\u8BE2 DeepSeek API \u8D26\u6237\u4F59\u989D").option("--json", "\u4EE5 JSON \u683C\u5F0F\u8F93\u51FA").action(async (opts) => {
+function registerBalance(program2) {
+  program2.command("balance").description("\u67E5\u8BE2 DeepSeek API \u8D26\u6237\u4F59\u989D").option("--json", "\u4EE5 JSON \u683C\u5F0F\u8F93\u51FA").action(async (opts) => {
     const { result, error } = await fetchBalance();
     if (!result) {
       console.error(error ?? "\u672A\u77E5\u9519\u8BEF");
@@ -17501,17 +18959,17 @@ function registerBalance(program3) {
 
 // src/commands/skill.ts
 var import_promises3 = require("fs/promises");
-var import_node_path3 = require("path");
-var import_node_os2 = require("os");
+var import_node_path4 = require("path");
+var import_node_os3 = require("os");
 
 // src/utils.ts
 var import_promises2 = require("fs/promises");
-var import_node_path2 = require("path");
+var import_node_path3 = require("path");
 var import_node_url = require("url");
-var import_meta = {};
+var import_meta2 = {};
 function getCurrentDir() {
   if (typeof __dirname !== "undefined") return __dirname;
-  return (0, import_node_path2.dirname)((0, import_node_url.fileURLToPath)(import_meta.url));
+  return (0, import_node_path3.dirname)((0, import_node_url.fileURLToPath)(import_meta2.url));
 }
 async function fileExists(path2) {
   try {
@@ -17529,18 +18987,18 @@ function fail(message) {
 // src/commands/skill.ts
 var currentDir = getCurrentDir();
 var SKILL_NAME = "deepseek-plugin-skill";
-var TRAE_SKILL_DIR = (0, import_node_path3.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
-var TRAE_SKILL_FILE = (0, import_node_path3.join)(TRAE_SKILL_DIR, "SKILL.md");
-var GLOBAL_SKILL_DIR = (0, import_node_path3.join)((0, import_node_os2.homedir)(), ".agents", "skills", SKILL_NAME);
+var TRAE_SKILL_DIR = (0, import_node_path4.join)(process.cwd(), ".trae", "skills", SKILL_NAME);
+var TRAE_SKILL_FILE = (0, import_node_path4.join)(TRAE_SKILL_DIR, "SKILL.md");
+var GLOBAL_SKILL_DIR = (0, import_node_path4.join)((0, import_node_os3.homedir)(), ".agents", "skills", SKILL_NAME);
 async function findSkillSourceDir() {
   const candidates = [
-    (0, import_node_path3.join)(currentDir, "..", "skill"),
+    (0, import_node_path4.join)(currentDir, "..", "skill"),
     // packages/cli/dist -> packages/cli/skill
-    (0, import_node_path3.join)(currentDir, "deepseek-plugin-skill")
+    (0, import_node_path4.join)(currentDir, "deepseek-plugin-skill")
     // release/ -> release/deepseek-plugin-skill
   ];
   for (const dir of candidates) {
-    if (await fileExists((0, import_node_path3.join)(dir, "SKILL.md"))) return dir;
+    if (await fileExists((0, import_node_path4.join)(dir, "SKILL.md"))) return dir;
   }
   return null;
 }
@@ -17553,8 +19011,8 @@ async function installSkill(targetDir) {
   await (0, import_promises3.cp)(sourceDir, targetDir, { recursive: true });
   console.log(`  \u2713 ${SKILL_NAME} -> ${targetDir}`);
 }
-function registerSkill(program3) {
-  const skill = program3.command("skill").description("Skill \u5B89\u88C5\u4E0E\u7BA1\u7406");
+function registerSkill(program2) {
+  const skill = program2.command("skill").description("Skill \u5B89\u88C5\u4E0E\u7BA1\u7406");
   skill.command("install").description("\u5B89\u88C5 deepseek-plugin-skill").option("--agent <agent>", "\u76EE\u6807 Agent \u7C7B\u578B (trae/claude/all)", "trae").option("--global", "\u5B89\u88C5\u5230\u5168\u5C40 ~/.agents/skills/").action(async (opts) => {
     console.log("==> \u5B89\u88C5 Skill...");
     if (opts.global) {
@@ -17819,8 +19277,8 @@ _deepseek_plugin_cli_completion() {
 
 complete -F _deepseek_plugin_cli_completion deepseek-plugin-cli
 `;
-function registerCompletion(program3) {
-  program3.command("completion").description("\u751F\u6210 shell \u8865\u5168\u811A\u672C\uFF08source <(deepseek-plugin-cli completion zsh) \u542F\u7528\uFF09").argument("[shell]", "\u76EE\u6807 shell\uFF08zsh | bash\uFF09", "zsh").action((shell) => {
+function registerCompletion(program2) {
+  program2.command("completion").description("\u751F\u6210 shell \u8865\u5168\u811A\u672C\uFF08source <(deepseek-plugin-cli completion zsh) \u542F\u7528\uFF09").argument("[shell]", "\u76EE\u6807 shell\uFF08zsh | bash\uFF09", "zsh").action((shell) => {
     if (shell === "zsh") {
       console.log(ZSH_COMPLETION);
       return;
@@ -17835,44 +19293,44 @@ function registerCompletion(program3) {
 }
 
 // src/commands/menubar.ts
-var import_node_child_process = require("child_process");
-var import_node_fs = require("fs");
-var import_node_path4 = require("path");
-var import_node_os3 = require("os");
+var import_node_child_process2 = require("child_process");
+var import_node_fs2 = require("fs");
+var import_node_path5 = require("path");
+var import_node_os4 = require("os");
 
 // ../menubar/macos/DeepSeekMenuBarApp.swift
-var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u660E\u7EC6\u9879\uFF08\u6309 Agent / \u6309 Model \u62C6\u5206\uFF09\nstruct TokenBreakdownItem: Codable {\n    let name: String\n    let tokens: Int\n\n    enum CodingKeys: String, CodingKey {\n        case name\n        case tokens\n    }\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n    let bySource: [TokenBreakdownItem]\n    let byModel: [TokenBreakdownItem]\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n        case bySource = "by_source"\n        case byModel = "by_model"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchBalance() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "balance", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                        self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                        self?.statusColor = .gray\n                    }\n                    return\n                }\n\n                let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n                DispatchQueue.main.async {\n                    if let main = result.balances.first {\n                        self?.balanceText = "\u603B\u989D: \\(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"\n                    } else {\n                        self?.balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n                    }\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n                    self?.statusColor = result.isAvailable ? .green : .red\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                    self?.statusColor = .gray\n                }\n            }\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n    @Published var bySource: [TokenBreakdownItem] = []\n    @Published var byModel: [TokenBreakdownItem] = []\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchTokens() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            // \u5148\u589E\u91CF\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u786E\u4FDD\u672C\u5730\u7EDF\u8BA1\u6570\u636E\u6700\u65B0\n            self?.runCLI(arguments: [cliPath, "token", "scan"])\n\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "token", "today", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.tokenText = "Token: \u65E0\u6570\u636E"\n                        self?.tokenDetail = ""\n                        self?.bySource = []\n                        self?.byModel = []\n                    }\n                    return\n                }\n\n                let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n                DispatchQueue.main.async {\n                    self?.tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n                    var parts: [String] = []\n                    parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n                    parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n                    parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n                    parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n                    self?.tokenDetail = parts.joined(separator: "  ")\n                    self?.bySource = summary.bySource\n                    self?.byModel = summary.byModel\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n                    self?.tokenDetail = ""\n                    self?.bySource = []\n                    self?.byModel = []\n                }\n            }\n        }\n    }\n\n    /// \u8FD0\u884C CLI \u547D\u4EE4\uFF08\u5FFD\u7565\u8F93\u51FA\uFF0C\u4EC5\u786E\u4FDD\u6267\u884C\u5B8C\u6210\uFF09\n    private func runCLI(arguments: [String]) {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = arguments\n        task.standardOutput = Pipe()\n        task.standardError = Pipe()\n        do {\n            try task.run()\n            task.waitUntilExit()\n        } catch {\n            // \u5FFD\u7565\u626B\u63CF\u5931\u8D25\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u8BFB\u53D6\n        }\n    }\n}\n\n/// \u6570\u5B57\u683C\u5F0F\u5316\uFF08K/M\uFF09\nfunc formatNumber(_ n: Int) -> String {\n    if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n    if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n    return String(n)\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF08\u7B2C 1 \u884C\uFF09\uFF1A\u70B9\u51FB\u5C55\u5F00\u6309 Agent / \u6309 Model \u660E\u7EC6\n            Menu {\n                if tokenManager.bySource.isEmpty && tokenManager.byModel.isEmpty {\n                    Text("\u6682\u65E0\u660E\u7EC6")\n                } else {\n                    if !tokenManager.bySource.isEmpty {\n                        Menu("\u6309 Agent") {\n                            ForEach(tokenManager.bySource, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                    if !tokenManager.byModel.isEmpty {\n                        Menu("\u6309 Model") {\n                            ForEach(tokenManager.byModel, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\uFF08\u8F93\u5165/\u8F93\u51FA/\u7F13\u5B58/\u8FD17\u5929\uFF09\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
+var DeepSeekMenuBarApp_default = 'import AppKit\nimport SwiftUI\n\n/// \u4F59\u989D\u4FE1\u606F\nstruct BalanceInfo: Codable {\n    let currency: String\n    let totalBalance: String\n    let grantedBalance: String\n    let toppedUpBalance: String\n}\n\n/// \u4F59\u989D\u67E5\u8BE2\u7ED3\u679C\nstruct BalanceResult: Codable {\n    let isAvailable: Bool\n    let balances: [BalanceInfo]\n}\n\n/// Token \u7528\u91CF\u660E\u7EC6\u9879\uFF08\u6309 Agent / \u6309 Model \u62C6\u5206\uFF09\nstruct TokenBreakdownItem: Codable {\n    let name: String\n    let tokens: Int\n\n    enum CodingKeys: String, CodingKey {\n        case name\n        case tokens\n    }\n}\n\n/// Token \u7528\u91CF\u6C47\u603B\uFF08\u5BF9\u5E94 `deepseek-plugin-cli token today --json`\uFF09\nstruct TokenSummary: Codable {\n    let today: Int\n    let todayInput: Int\n    let todayOutput: Int\n    let todayCached: Int\n    let sevenDay: Int\n    let allTime: Int\n    let updatedAt: String\n    let bySource: [TokenBreakdownItem]\n    let byModel: [TokenBreakdownItem]\n\n    enum CodingKeys: String, CodingKey {\n        case today\n        case todayInput = "today_input"\n        case todayOutput = "today_output"\n        case todayCached = "today_cached"\n        case sevenDay = "seven_day"\n        case allTime = "all_time"\n        case updatedAt = "updated_at"\n        case bySource = "by_source"\n        case byModel = "by_model"\n    }\n}\n\n/// \u4F59\u989D\u72B6\u6001\u7BA1\u7406\n@MainActor\nfinal class BalanceManager: ObservableObject {\n    @Published var balanceText: String = "\u52A0\u8F7D\u4E2D..."\n    @Published var statusText: String = "\u672A\u77E5"\n    @Published var statusColor: Color = .gray\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchBalance()\n        }\n        fetchBalance()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli balance --json \u83B7\u53D6\u4F59\u989D\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchBalance() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "balance", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                        self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                        self?.statusColor = .gray\n                    }\n                    return\n                }\n\n                let result = try JSONDecoder().decode(BalanceResult.self, from: data)\n                DispatchQueue.main.async {\n                    if let main = result.balances.first {\n                        self?.balanceText = "\u603B\u989D: \\(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"\n                    } else {\n                        self?.balanceText = "\u603B\u989D: \u65E0\u6570\u636E"\n                    }\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \\(result.isAvailable ? "\u2713 \u53EF\u7528" : "\u26A0 \u4E0D\u53EF\u7528")"\n                    self?.statusColor = result.isAvailable ? .green : .red\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.balanceText = "\u67E5\u8BE2\u5931\u8D25"\n                    self?.statusText = "\u53EF\u7528\u72B6\u6001: \u672A\u77E5"\n                    self?.statusColor = .gray\n                }\n            }\n        }\n    }\n\n    private func formatBalance(_ s: String, currency: String) -> String {\n        let n = Double(s) ?? 0\n        let symbol = currency == "CNY" ? "\xA5" : currency == "USD" ? "$" : ""\n        if n >= 1000 { return "\\(symbol)\\(String(format: "%.0f", n))" }\n        if n >= 10 { return "\\(symbol)\\(String(format: "%.1f", n))" }\n        return "\\(symbol)\\(String(format: "%.2f", n))"\n    }\n}\n\n/// Token \u7528\u91CF\u7BA1\u7406\n@MainActor\nfinal class TokenManager: ObservableObject {\n    @Published var tokenText: String = "Token: \u52A0\u8F7D\u4E2D..."\n    @Published var tokenDetail: String = ""\n    @Published var bySource: [TokenBreakdownItem] = []\n    @Published var byModel: [TokenBreakdownItem] = []\n\n    private let cliPath: String\n\n    init(cliPath: String) {\n        self.cliPath = cliPath\n        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in\n            self?.fetchTokens()\n        }\n        fetchTokens()\n    }\n\n    /// \u8C03\u7528 deepseek-plugin-cli token today --json \u83B7\u53D6\u4ECA\u65E5 token \u7528\u91CF\uFF08\u540E\u53F0\u6267\u884C\uFF0C\u4E0D\u963B\u585E\u4E3B\u7EBF\u7A0B\uFF09\n    func fetchTokens() {\n        let cliPath = self.cliPath\n        DispatchQueue.global(qos: .userInitiated).async { [weak self] in\n            // \u5148\u589E\u91CF\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u786E\u4FDD\u672C\u5730\u7EDF\u8BA1\u6570\u636E\u6700\u65B0\n            self?.runCLI(arguments: [cliPath, "token", "scan"])\n\n            let task = Process()\n            task.launchPath = "/usr/bin/env"\n            task.arguments = [cliPath, "token", "today", "--json"]\n\n            let pipe = Pipe()\n            task.standardOutput = pipe\n            task.standardError = Pipe()\n\n            do {\n                try task.run()\n                task.waitUntilExit()\n\n                let data = pipe.fileHandleForReading.readDataToEndOfFile()\n                guard task.terminationStatus == 0, !data.isEmpty else {\n                    DispatchQueue.main.async {\n                        self?.tokenText = "Token: \u65E0\u6570\u636E"\n                        self?.tokenDetail = ""\n                        self?.bySource = []\n                        self?.byModel = []\n                    }\n                    return\n                }\n\n                let summary = try JSONDecoder().decode(TokenSummary.self, from: data)\n                DispatchQueue.main.async {\n                    self?.tokenText = "\u4ECA\u65E5 Token: \\(formatNumber(summary.today))"\n                    var parts: [String] = []\n                    parts.append("\u8F93\u5165: \\(formatNumber(summary.todayInput))")\n                    parts.append("\u8F93\u51FA: \\(formatNumber(summary.todayOutput))")\n                    parts.append("\u7F13\u5B58: \\(formatNumber(summary.todayCached))")\n                    parts.append("\u8FD17\u5929: \\(formatNumber(summary.sevenDay))")\n                    self?.tokenDetail = parts.joined(separator: "  ")\n                    self?.bySource = summary.bySource\n                    self?.byModel = summary.byModel\n                }\n            } catch {\n                DispatchQueue.main.async {\n                    self?.tokenText = "Token: \u67E5\u8BE2\u5931\u8D25"\n                    self?.tokenDetail = ""\n                    self?.bySource = []\n                    self?.byModel = []\n                }\n            }\n        }\n    }\n\n    /// \u8FD0\u884C CLI \u547D\u4EE4\uFF08\u5FFD\u7565\u8F93\u51FA\uFF0C\u4EC5\u786E\u4FDD\u6267\u884C\u5B8C\u6210\uFF09\n    private func runCLI(arguments: [String]) {\n        let task = Process()\n        task.launchPath = "/usr/bin/env"\n        task.arguments = arguments\n        task.standardOutput = Pipe()\n        task.standardError = Pipe()\n        do {\n            try task.run()\n            task.waitUntilExit()\n        } catch {\n            // \u5FFD\u7565\u626B\u63CF\u5931\u8D25\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u8BFB\u53D6\n        }\n    }\n}\n\n/// \u6570\u5B57\u683C\u5F0F\u5316\uFF08K/M\uFF09\nfunc formatNumber(_ n: Int) -> String {\n    if n >= 1_000_000 { return String(format: "%.2fM", Double(n) / 1_000_000) }\n    if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }\n    return String(n)\n}\n\n/// DeepSeek \u63D2\u4EF6\u83DC\u5355\u680F\u5E94\u7528\n@main\nstruct DeepSeekMenuBarApp: App {\n    @StateObject private var balanceManager: BalanceManager\n    @StateObject private var tokenManager: TokenManager\n\n    init() {\n        let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli"\n        _balanceManager = StateObject(wrappedValue: BalanceManager(cliPath: path))\n        _tokenManager = StateObject(wrappedValue: TokenManager(cliPath: path))\n    }\n\n    var body: some Scene {\n        MenuBarExtra {\n            // \u4F59\u989D\uFF0C\u70B9\u51FB\u8DF3\u8F6C usage\n            Button {\n                if let url = URL(string: "https://platform.deepseek.com/usage") {\n                    NSWorkspace.shared.open(url)\n                }\n            } label: {\n                Text(balanceManager.balanceText)\n            }\n\n            // \u53EF\u7528\u72B6\u6001\n            Text(balanceManager.statusText)\n                .foregroundStyle(balanceManager.statusColor)\n\n            Divider()\n\n            // Token \u7528\u91CF\uFF08\u7B2C 1 \u884C\uFF09\uFF1A\u70B9\u51FB\u5C55\u5F00\u6309 Agent / \u6309 Model \u660E\u7EC6\n            Menu {\n                if tokenManager.bySource.isEmpty && tokenManager.byModel.isEmpty {\n                    Text("\u6682\u65E0\u660E\u7EC6")\n                } else {\n                    if !tokenManager.bySource.isEmpty {\n                        Menu("\u6309 Agent") {\n                            ForEach(tokenManager.bySource, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                    if !tokenManager.byModel.isEmpty {\n                        Menu("\u6309 Model") {\n                            ForEach(tokenManager.byModel, id: \\.name) { item in\n                                Text("\\(item.name): \\(formatNumber(item.tokens))")\n                            }\n                        }\n                    }\n                }\n            } label: {\n                Text(tokenManager.tokenText)\n            }\n\n            // Token \u660E\u7EC6\uFF08\u8F93\u5165/\u8F93\u51FA/\u7F13\u5B58/\u8FD17\u5929\uFF09\n            if !tokenManager.tokenDetail.isEmpty {\n                Text(tokenManager.tokenDetail)\n                    .font(.system(size: 11))\n                    .foregroundStyle(.secondary)\n            }\n\n            Divider()\n\n            // \u5237\u65B0\uFF08\u540C\u65F6\u5237\u65B0\u4F59\u989D\u548C token\uFF09\n            Button {\n                balanceManager.fetchBalance()\n                tokenManager.fetchTokens()\n            } label: {\n                Label("\u5237\u65B0", systemImage: "arrow.clockwise")\n            }\n            .keyboardShortcut("r")\n\n            // \u6253\u5F00\u56FE\u5F62\u5316\u914D\u7F6E\u754C\u9762\uFF08\u8C03\u7528 cli gui\uFF0C\u590D\u7528/\u542F\u52A8\u540E\u53F0\u670D\u52A1\u5E76\u6253\u5F00\u6D4F\u89C8\u5668\uFF09\n            Button {\n                let task = Process()\n                task.launchPath = "/usr/bin/env"\n                task.arguments = [CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli", "gui"]\n                task.standardOutput = Pipe()\n                task.standardError = Pipe()\n                do { try task.run() } catch { /* \u5FFD\u7565 */ }\n            } label: {\n                Label("\u6253\u5F00\u914D\u7F6E\u754C\u9762", systemImage: "gearshape")\n            }\n\n            // \u9000\u51FA\n            Button {\n                NSApplication.shared.terminate(nil)\n            } label: {\n                Label("\u9000\u51FA", systemImage: "power")\n            }\n            .keyboardShortcut("q")\n        } label: {\n            Text("\u{1F433}")\n        }\n    }\n}\n';
 
 // src/commands/menubar.ts
 var currentDir2 = getCurrentDir();
 function menuBarBinCandidates() {
   return [
-    (0, import_node_path4.join)(currentDir2, "DeepSeekMenuBar"),
+    (0, import_node_path5.join)(currentDir2, "DeepSeekMenuBar"),
     // release/ -> release/DeepSeekMenuBar
-    (0, import_node_path4.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
+    (0, import_node_path5.join)(currentDir2, "..", "release", "DeepSeekMenuBar")
     // dist/ -> release/DeepSeekMenuBar
   ];
 }
 async function buildMenuBar() {
-  if ((0, import_node_os3.platform)() !== "darwin") {
+  if ((0, import_node_os4.platform)() !== "darwin") {
     console.error("\u2717 \u83DC\u5355\u680F\u5E94\u7528\u4EC5\u652F\u6301 macOS");
     return null;
   }
   try {
-    (0, import_node_child_process.execSync)("which swiftc", { stdio: "pipe" });
+    (0, import_node_child_process2.execSync)("which swiftc", { stdio: "pipe" });
   } catch {
     console.error("\u2717 \u672A\u627E\u5230 swiftc\uFF0C\u8BF7\u5B89\u88C5 Xcode Command Line Tools: xcode-select --install");
     return null;
   }
-  const outDir = (0, import_node_fs.mkdtempSync)((0, import_node_path4.join)((0, import_node_os3.tmpdir)(), "deepseek-menubar-"));
-  const srcPath = (0, import_node_path4.join)(outDir, "DeepSeekMenuBarApp.swift");
-  (0, import_node_fs.writeFileSync)(srcPath, DeepSeekMenuBarApp_default);
-  const outPath = (0, import_node_path4.join)(outDir, "DeepSeekMenuBar");
+  const outDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path5.join)((0, import_node_os4.tmpdir)(), "deepseek-menubar-"));
+  const srcPath = (0, import_node_path5.join)(outDir, "DeepSeekMenuBarApp.swift");
+  (0, import_node_fs2.writeFileSync)(srcPath, DeepSeekMenuBarApp_default);
+  const outPath = (0, import_node_path5.join)(outDir, "DeepSeekMenuBar");
   try {
-    (0, import_node_child_process.execSync)(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os3.arch}-apple-macos13.0`, {
+    (0, import_node_child_process2.execSync)(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${import_node_os4.arch}-apple-macos13.0`, {
       stdio: "pipe"
     });
-    (0, import_node_child_process.execSync)(`chmod +x "${outPath}"`);
+    (0, import_node_child_process2.execSync)(`chmod +x "${outPath}"`);
     console.log("\u2713 \u83DC\u5355\u680F\u5E94\u7528\u7F16\u8BD1\u5B8C\u6210");
     return outPath;
   } catch (e) {
@@ -17886,8 +19344,8 @@ async function resolveMenuBarBin() {
   }
   return buildMenuBar();
 }
-function registerMenuBar(program3) {
-  program3.command("menubar").description("\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528\uFF08\u663E\u793A\u4F59\u989D\uFF0C\u6BCF 10 \u5206\u949F\u5237\u65B0\uFF09").option("--build", "\u5F3A\u5236\u91CD\u65B0\u7F16\u8BD1\u83DC\u5355\u680F\u5E94\u7528").action(async (opts) => {
+function registerMenuBar(program2) {
+  program2.command("menubar").description("\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528\uFF08\u663E\u793A\u4F59\u989D\uFF0C\u6BCF 10 \u5206\u949F\u5237\u65B0\uFF09").option("--build", "\u5F3A\u5236\u91CD\u65B0\u7F16\u8BD1\u83DC\u5355\u680F\u5E94\u7528").action(async (opts) => {
     if (opts.build) {
       const bin2 = await buildMenuBar();
       if (!bin2) fail("\u83DC\u5355\u680F\u5E94\u7528\u7F16\u8BD1\u5931\u8D25");
@@ -17896,558 +19354,30 @@ function registerMenuBar(program3) {
     }
     const bin = await resolveMenuBarBin();
     if (!bin) fail("\u83DC\u5355\u680F\u5E94\u7528\u542F\u52A8\u5931\u8D25");
+    if (isMenuBarRunning()) {
+      console.log("\u2713 \u83DC\u5355\u680F\u5E94\u7528\u5DF2\u5728\u8FD0\u884C\uFF0C\u65E0\u9700\u91CD\u590D\u542F\u52A8");
+      return;
+    }
     const cliPath = process.argv[1] || "deepseek-plugin-cli";
-    const child = (0, import_node_child_process.spawn)(bin, [cliPath], {
+    try {
+      await ensureServiceRunning(cliPath);
+    } catch (e) {
+      console.warn(`\u26A0 \u540E\u53F0\u670D\u52A1\u542F\u52A8\u5931\u8D25: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const child = (0, import_node_child_process2.spawn)(bin, [cliPath], {
       detached: true,
       stdio: "ignore"
     });
     child.unref();
+    writeMenuBarPid(child.pid ?? 0);
     console.log("\u2713 \u83DC\u5355\u680F\u5E94\u7528\u5DF2\u542F\u52A8\uFF0C\u67E5\u770B macOS \u83DC\u5355\u680F\u53F3\u4E0A\u89D2");
     console.log("  \u9000\u51FA\u65B9\u5F0F: \u70B9\u51FB\u83DC\u5355\u680F\u56FE\u6807 \u2192 \u9000\u51FA");
   });
 }
 
-// ../token-counter/dist/counter.js
-var import_fs3 = require("fs");
-var import_crypto2 = require("crypto");
-var import_module = require("module");
-var import_os2 = require("os");
-var import_path5 = require("path");
-var import_meta2 = {};
-var require2 = (0, import_module.createRequire)(import_meta2.url || "file:///noop.js");
-var DATA_DIR = (0, import_path5.join)((0, import_os2.homedir)(), ".deepseek-plugins");
-var BUCKET_FILE = (0, import_path5.join)(DATA_DIR, "token-buckets.json");
-var SCAN_META_FILE = (0, import_path5.join)(DATA_DIR, "token-scan-meta.json");
-var BUCKET_MS = 30 * 60 * 1e3;
-var BUCKET_RETENTION_DAYS = 90;
-var RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1e3;
-function ensureDataDir() {
-  if (!(0, import_fs3.existsSync)(DATA_DIR)) {
-    (0, import_fs3.mkdirSync)(DATA_DIR, { recursive: true, mode: 448 });
-  }
-}
-function floorToBucket(ts) {
-  return Math.floor(ts / BUCKET_MS) * BUCKET_MS;
-}
-function safeParseTime(value) {
-  if (typeof value !== "string" && typeof value !== "number") return null;
-  const ts = new Date(value).getTime();
-  return isNaN(ts) ? null : ts;
-}
-function bucketKey(bucketStart, source, model, project) {
-  return `${bucketStart}|${source}|${model}|${project}`;
-}
-function hashLine(line) {
-  return (0, import_crypto2.createHash)("sha256").update(line).digest("hex");
-}
-function formatNumber(n) {
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
-  return String(n);
-}
-function loadBuckets() {
-  if (!(0, import_fs3.existsSync)(BUCKET_FILE)) return [];
-  try {
-    const raw = (0, import_fs3.readFileSync)(BUCKET_FILE, "utf-8");
-    if (!raw.trim()) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-function saveBuckets(buckets) {
-  ensureDataDir();
-  (0, import_fs3.writeFileSync)(BUCKET_FILE, JSON.stringify(buckets), "utf-8");
-}
-function loadScanMeta() {
-  if (!(0, import_fs3.existsSync)(SCAN_META_FILE)) return { files: {}, last_scan: "" };
-  try {
-    return JSON.parse((0, import_fs3.readFileSync)(SCAN_META_FILE, "utf-8"));
-  } catch {
-    return { files: {}, last_scan: "" };
-  }
-}
-function saveScanMeta(meta) {
-  ensureDataDir();
-  (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify(meta), "utf-8");
-}
-function findClaudeCodeLogs() {
-  const base = (0, import_path5.join)((0, import_os2.homedir)(), ".claude", "projects");
-  if (!(0, import_fs3.existsSync)(base)) return [];
-  const targets = [];
-  const walk = (dir) => {
-    const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
-    for (const e of entries) {
-      if (e.isSymbolicLink()) continue;
-      const full = (0, import_path5.join)(dir, e.name);
-      if (e.isDirectory()) {
-        walk(full);
-      } else if (e.name.endsWith(".jsonl")) {
-        targets.push({ path: full, source: "claude-code" });
-      }
-    }
-  };
-  try {
-    walk(base);
-  } catch {
-  }
-  return targets;
-}
-function findCodexLogs() {
-  const candidates = [
-    (0, import_path5.join)((0, import_os2.homedir)(), ".codex", "logs"),
-    (0, import_path5.join)((0, import_os2.homedir)(), ".config", "codex", "logs")
-  ];
-  const targets = [];
-  for (const dir of candidates) {
-    if (!(0, import_fs3.existsSync)(dir)) continue;
-    try {
-      const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
-      for (const e of entries) {
-        if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
-          targets.push({ path: (0, import_path5.join)(dir, e.name), source: "codex" });
-        }
-      }
-    } catch {
-    }
-  }
-  return targets;
-}
-function findCursorLogs() {
-  const base = (0, import_path5.join)((0, import_os2.homedir)(), "Library", "Application Support", "Cursor", "logs");
-  if (!(0, import_fs3.existsSync)(base)) return [];
-  const targets = [];
-  try {
-    const entries = (0, import_fs3.readdirSync)(base, { withFileTypes: true });
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        const sub = (0, import_path5.join)(base, e.name);
-        try {
-          const subEntries = (0, import_fs3.readdirSync)(sub, { withFileTypes: true });
-          for (const se of subEntries) {
-            if (se.name.endsWith(".jsonl") || se.name.endsWith(".log")) {
-              targets.push({ path: (0, import_path5.join)(sub, se.name), source: "cursor" });
-            }
-          }
-        } catch {
-        }
-      } else if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
-        targets.push({ path: (0, import_path5.join)(base, e.name), source: "cursor" });
-      }
-    }
-  } catch {
-  }
-  return targets;
-}
-function discoverScanTargets() {
-  return [...findClaudeCodeLogs(), ...findCodexLogs(), ...findCursorLogs(), ...findOpenCodeDb()];
-}
-function findOpenCodeDb() {
-  const candidates = [
-    (0, import_path5.join)((0, import_os2.homedir)(), ".local", "share", "opencode", "opencode.db")
-  ];
-  const targets = [];
-  for (const p of candidates) {
-    if ((0, import_fs3.existsSync)(p)) targets.push({ path: p, source: "opencode" });
-  }
-  return targets;
-}
-function readTargetLines(target) {
-  if (target.source === "opencode") {
-    return readOpenCodeMessages(target.path);
-  }
-  const content = (0, import_fs3.readFileSync)(target.path, "utf-8");
-  return content.split("\n").filter((l) => l.trim().length > 0);
-}
-function readOpenCodeMessages(dbPath) {
-  try {
-    const { DatabaseSync } = require2("node:sqlite");
-    const db = new DatabaseSync(dbPath, { readOnly: true });
-    const stmt = db.prepare(
-      "SELECT data FROM message WHERE data LIKE ? AND data LIKE ? ORDER BY time_created, id"
-    );
-    const rows = stmt.all('%"role":"assistant"%', '%"tokens"%');
-    db.close();
-    const lines = [];
-    for (const row of rows) {
-      if (typeof row.data === "string") lines.push(row.data);
-    }
-    return lines;
-  } catch {
-    return [];
-  }
-}
-function extractProject(source, filePath, lines) {
-  if (source === "claude-code") {
-    for (const line of lines) {
-      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
-      if (m && m[1]) {
-        const base = m[1].split("/").filter(Boolean).pop();
-        if (base) return base;
-      }
-    }
-    const parts = filePath.split("/");
-    const idx = parts.lastIndexOf("projects");
-    if (idx >= 0 && idx + 1 < parts.length) {
-      const encoded = parts[idx + 1] ?? "";
-      const decoded = encoded.replace(/^-/, "").split("-").filter(Boolean);
-      return decoded[decoded.length - 1] || "unknown";
-    }
-  }
-  if (source === "opencode") {
-    for (const line of lines) {
-      const m = line.match(/"cwd"\s*:\s*"([^"]+)"/);
-      if (m && m[1]) {
-        const base = m[1].split("/").filter(Boolean).pop();
-        if (base) return base;
-      }
-    }
-  }
-  return "unknown";
-}
-function parseClaudeCodeLine(line) {
-  try {
-    const obj = JSON.parse(line);
-    if (obj.type !== "assistant") return null;
-    const msg = obj.message;
-    if (!msg || !msg.usage) return null;
-    const usage = msg.usage;
-    const ts = safeParseTime(obj.timestamp);
-    if (ts === null) return null;
-    return {
-      timestamp: new Date(ts).toISOString(),
-      source: "claude-code",
-      model: msg.model || "unknown",
-      project: "unknown",
-      usage: {
-        input_tokens: usage.input_tokens || 0,
-        output_tokens: usage.output_tokens || 0,
-        cached_input_tokens: usage.cache_read_input_tokens || 0,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-        reasoning_output_tokens: usage.reasoning_output_tokens || 0
-      }
-    };
-  } catch {
-    return null;
-  }
-}
-function parseCodexLine(line) {
-  try {
-    const obj = JSON.parse(line);
-    const usage = obj.usage || obj.token_usage;
-    if (!usage) return null;
-    const time = safeParseTime(obj.timestamp || obj.created_at || obj.time);
-    if (time === null) return null;
-    return {
-      timestamp: new Date(time).toISOString(),
-      source: "codex",
-      model: obj.model || "unknown",
-      project: "unknown",
-      usage: {
-        input_tokens: usage.input_tokens || usage.prompt_tokens || 0,
-        output_tokens: usage.output_tokens || usage.completion_tokens || 0,
-        cached_input_tokens: usage.cache_read_input_tokens || 0,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-        reasoning_output_tokens: usage.reasoning_output_tokens || 0
-      }
-    };
-  } catch {
-    return null;
-  }
-}
-function parseCursorLine(line) {
-  try {
-    const obj = JSON.parse(line);
-    const usage = obj.usage;
-    if (!usage) return null;
-    const time = safeParseTime(obj.timestamp || obj.time);
-    if (time === null) return null;
-    return {
-      timestamp: new Date(time).toISOString(),
-      source: "cursor",
-      model: obj.model || "unknown",
-      project: "unknown",
-      usage: {
-        input_tokens: usage.input_tokens || 0,
-        output_tokens: usage.output_tokens || 0,
-        cached_input_tokens: usage.cache_read_input_tokens || 0,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-        reasoning_output_tokens: usage.reasoning_output_tokens || 0
-      }
-    };
-  } catch {
-    return null;
-  }
-}
-function parseLine(line, source) {
-  switch (source) {
-    case "claude-code":
-      return parseClaudeCodeLine(line);
-    case "codex":
-      return parseCodexLine(line);
-    case "cursor":
-      return parseCursorLine(line);
-    case "opencode":
-      return parseOpenCodeLine(line);
-    default:
-      return null;
-  }
-}
-function parseOpenCodeLine(line) {
-  try {
-    const obj = JSON.parse(line);
-    if (obj.role !== "assistant") return null;
-    const tokens = obj.tokens;
-    if (!tokens) return null;
-    const ts = safeParseTime(obj.time?.created);
-    if (ts === null) return null;
-    const model = [obj.providerID, obj.modelID].filter(Boolean).join("/") || "unknown";
-    return {
-      timestamp: new Date(ts).toISOString(),
-      source: "opencode",
-      model,
-      project: "unknown",
-      usage: {
-        input_tokens: tokens.input || 0,
-        output_tokens: tokens.output || 0,
-        cached_input_tokens: tokens.cache?.read || 0,
-        cache_creation_input_tokens: tokens.cache?.write || 0,
-        reasoning_output_tokens: tokens.reasoning || 0
-      }
-    };
-  } catch {
-    return null;
-  }
-}
-function scanAndAggregate() {
-  ensureDataDir();
-  const targets = discoverScanTargets();
-  const meta = loadScanMeta();
-  const buckets = loadBuckets();
-  const bucketMap = /* @__PURE__ */ new Map();
-  for (const b of buckets) {
-    bucketMap.set(bucketKey(new Date(b.bucket_start).getTime(), b.source, b.model, b.project), b);
-  }
-  let newEntries = 0;
-  const sources = /* @__PURE__ */ new Set();
-  for (const target of targets) {
-    sources.add(target.source);
-    let stat;
-    try {
-      stat = (0, import_fs3.statSync)(target.path);
-    } catch {
-      continue;
-    }
-    const cached = meta.files[target.path];
-    if (target.source !== "opencode" && cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
-      continue;
-    }
-    let lines;
-    try {
-      lines = readTargetLines(target);
-    } catch {
-      continue;
-    }
-    let startLine;
-    if (cached?.last_hash && lines.length > 0) {
-      const oldIdx = (cached.last_line ?? 0) - 1;
-      const oldLine = oldIdx >= 0 && oldIdx < lines.length ? lines[oldIdx] : void 0;
-      const prefixIntact = oldLine !== void 0 && hashLine(oldLine) === cached.last_hash;
-      if (prefixIntact) {
-        startLine = (cached.last_line ?? 0) > lines.length ? 0 : cached.last_line ?? 0;
-      } else {
-        const idx = lines.findIndex((l) => hashLine(l) === cached.last_hash);
-        startLine = idx >= 0 ? idx + 1 : 0;
-      }
-    } else {
-      startLine = 0;
-    }
-    const newLines = startLine > 0 ? lines.slice(startLine) : lines;
-    if (newLines.length === 0) {
-      const lastLine2 = lines[lines.length - 1];
-      meta.files[target.path] = {
-        mtime: stat.mtimeMs,
-        size: stat.size,
-        last_line: lines.length,
-        last_hash: lastLine2 !== void 0 ? hashLine(lastLine2) : cached?.last_hash ?? ""
-      };
-      continue;
-    }
-    const project = extractProject(target.source, target.path, lines);
-    for (const line of newLines) {
-      const entry = parseLine(line, target.source);
-      if (!entry) continue;
-      entry.project = project;
-      newEntries++;
-      const ts = new Date(entry.timestamp).getTime();
-      const bucketStart = floorToBucket(ts);
-      const key = bucketKey(bucketStart, entry.source, entry.model, entry.project);
-      const existing = bucketMap.get(key);
-      if (existing) {
-        existing.input_tokens += entry.usage.input_tokens;
-        existing.output_tokens += entry.usage.output_tokens;
-        existing.cached_input_tokens += entry.usage.cached_input_tokens;
-        existing.cache_creation_input_tokens += entry.usage.cache_creation_input_tokens;
-        existing.reasoning_output_tokens += entry.usage.reasoning_output_tokens;
-        existing.total_tokens += entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
-        existing.rounds += 1;
-      } else {
-        const total = entry.usage.input_tokens + entry.usage.output_tokens + entry.usage.cached_input_tokens + entry.usage.cache_creation_input_tokens + entry.usage.reasoning_output_tokens;
-        bucketMap.set(key, {
-          bucket_start: new Date(bucketStart).toISOString(),
-          source: entry.source,
-          model: entry.model,
-          project: entry.project,
-          input_tokens: entry.usage.input_tokens,
-          output_tokens: entry.usage.output_tokens,
-          cached_input_tokens: entry.usage.cached_input_tokens,
-          cache_creation_input_tokens: entry.usage.cache_creation_input_tokens,
-          reasoning_output_tokens: entry.usage.reasoning_output_tokens,
-          total_tokens: total,
-          rounds: 1
-        });
-      }
-    }
-    const lastProcessed = lines[Math.min(startLine + newLines.length, lines.length) - 1];
-    meta.files[target.path] = {
-      mtime: stat.mtimeMs,
-      size: stat.size,
-      last_line: lines.length,
-      last_hash: lastProcessed ? hashLine(lastProcessed) : cached?.last_hash ?? ""
-    };
-  }
-  const cutoff = Date.now() - RETENTION_MS;
-  const allBuckets = Array.from(bucketMap.values()).filter((b) => new Date(b.bucket_start).getTime() >= cutoff).sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
-  saveBuckets(allBuckets);
-  meta.last_scan = (/* @__PURE__ */ new Date()).toISOString();
-  saveScanMeta(meta);
-  return {
-    scanned: targets.length,
-    new_entries: newEntries,
-    total_buckets: allBuckets.length,
-    sources: Array.from(sources)
-  };
-}
-function getBuckets() {
-  return loadBuckets();
-}
-function getSummary() {
-  const buckets = loadBuckets();
-  const now = Date.now();
-  const todayStart = /* @__PURE__ */ new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1e3;
-  let today = 0;
-  let todayInput = 0;
-  let todayOutput = 0;
-  let todayCached = 0;
-  let todayCacheCreation = 0;
-  let todayReasoning = 0;
-  let sevenDay = 0;
-  let allTime = 0;
-  const bySourceMap = /* @__PURE__ */ new Map();
-  const byModelMap = /* @__PURE__ */ new Map();
-  for (const b of buckets) {
-    const ts = new Date(b.bucket_start).getTime();
-    allTime += b.total_tokens;
-    if (ts >= sevenDaysAgo) sevenDay += b.total_tokens;
-    if (ts >= todayStart.getTime()) {
-      today += b.total_tokens;
-      todayInput += b.input_tokens;
-      todayOutput += b.output_tokens;
-      todayCached += b.cached_input_tokens;
-      todayCacheCreation += b.cache_creation_input_tokens;
-      todayReasoning += b.reasoning_output_tokens;
-      bySourceMap.set(b.source, (bySourceMap.get(b.source) ?? 0) + b.total_tokens);
-      byModelMap.set(b.model, (byModelMap.get(b.model) ?? 0) + b.total_tokens);
-    }
-  }
-  const toBreakdown = (m) => Array.from(m.entries()).filter(([, tokens]) => tokens > 0).map(([name, tokens]) => ({ name, tokens })).sort((a, b) => b.tokens - a.tokens);
-  return {
-    today,
-    today_input: todayInput,
-    today_output: todayOutput,
-    today_cached: todayCached,
-    today_cache_creation: todayCacheCreation,
-    today_reasoning: todayReasoning,
-    seven_day: sevenDay,
-    all_time: allTime,
-    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-    by_source: toBreakdown(bySourceMap),
-    by_model: toBreakdown(byModelMap)
-  };
-}
-function generateDailyReport(days) {
-  if (days <= 0) return [];
-  const buckets = loadBuckets();
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1e3;
-  const dayMap = /* @__PURE__ */ new Map();
-  for (const b of buckets) {
-    const ts = new Date(b.bucket_start).getTime();
-    if (ts < cutoff) continue;
-    const date = b.bucket_start.slice(0, 10);
-    const existing = dayMap.get(date);
-    if (existing) {
-      existing.rounds += b.rounds;
-      existing.input_tokens += b.input_tokens;
-      existing.output_tokens += b.output_tokens;
-      existing.cached_input_tokens += b.cached_input_tokens;
-      existing.cache_creation_input_tokens += b.cache_creation_input_tokens;
-      existing.reasoning_output_tokens += b.reasoning_output_tokens;
-      existing.total_tokens += b.total_tokens;
-    } else {
-      dayMap.set(date, {
-        date,
-        rounds: b.rounds,
-        input_tokens: b.input_tokens,
-        output_tokens: b.output_tokens,
-        cached_input_tokens: b.cached_input_tokens,
-        cache_creation_input_tokens: b.cache_creation_input_tokens,
-        reasoning_output_tokens: b.reasoning_output_tokens,
-        total_tokens: b.total_tokens
-      });
-    }
-  }
-  return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-function formatReport(days) {
-  const report = generateDailyReport(days);
-  if (report.length === 0) return `\u8FD1 ${days} \u5929\u65E0 token \u7528\u91CF\u8BB0\u5F55\u3002`;
-  const lines = [];
-  lines.push(`Token \u7528\u91CF\u7EDF\u8BA1 (\u8FD1 ${days} \u5929)`);
-  lines.push("");
-  lines.push("\u65E5\u671F         \u8F6E\u6B21    \u8F93\u5165        \u8F93\u51FA        \u603B\u8BA1");
-  lines.push("\u2500".repeat(55));
-  let totalRounds = 0;
-  let totalInput = 0;
-  let totalOutput = 0;
-  let totalAll = 0;
-  for (const day of report) {
-    totalRounds += day.rounds;
-    totalInput += day.input_tokens;
-    totalOutput += day.output_tokens;
-    totalAll += day.total_tokens;
-    lines.push(
-      `${day.date}  ${String(day.rounds).padStart(5)}  ${formatNumber(day.input_tokens).padStart(8)}  ${formatNumber(day.output_tokens).padStart(8)}  ${formatNumber(day.total_tokens).padStart(8)}`
-    );
-  }
-  lines.push("\u2500".repeat(55));
-  lines.push(
-    `\u5408\u8BA1         ${String(totalRounds).padStart(5)}  ${formatNumber(totalInput).padStart(8)}  ${formatNumber(totalOutput).padStart(8)}  ${formatNumber(totalAll).padStart(8)}`
-  );
-  lines.push("");
-  lines.push(`\u6876\u6570\u636E\u6587\u4EF6: ${BUCKET_FILE}`);
-  return lines.join("\n");
-}
-function clearAll() {
-  ensureDataDir();
-  (0, import_fs3.writeFileSync)(BUCKET_FILE, "[]", "utf-8");
-  (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: "" }), "utf-8");
-}
-
 // src/commands/token.ts
-function registerToken(program3) {
-  const tokenCmd = program3.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u672C\u5730\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u6309 30 \u5206\u949F\u6876\u805A\u5408\uFF09");
+function registerToken(program2) {
+  const tokenCmd = program2.command("token").description("Token \u7528\u91CF\u7EDF\u8BA1\uFF08\u672C\u5730\u626B\u63CF agent \u65E5\u5FD7\uFF0C\u6309 30 \u5206\u949F\u6876\u805A\u5408\uFF09");
   tokenCmd.command("scan").description("\u626B\u63CF\u672C\u5730 agent \u65E5\u5FD7\uFF08Claude Code / Codex / Cursor / opencode\uFF09\uFF0C\u805A\u5408 token \u7528\u91CF").option("--json", "\u8F93\u51FA JSON \u683C\u5F0F").action(async (opts) => {
     const result = scanAndAggregate();
     if (opts.json) {
@@ -18507,20 +19437,91 @@ function registerToken(program3) {
   });
 }
 
+// src/commands/gui.ts
+function registerGui(program2) {
+  program2.command("gui").description("\u542F\u52A8\u672C\u5730\u56FE\u5F62\u5316\u914D\u7F6E\u754C\u9762\uFF08\u7BA1\u7406 API Key / \u591A\u6A21\u6001\u6A21\u578B / Token \u7528\u91CF\uFF09\uFF0C\u540E\u53F0\u670D\u52A1\u5E38\u9A7B").option("--no-open", "\u4E0D\u81EA\u52A8\u6253\u5F00\u6D4F\u89C8\u5668").action(async (opts) => {
+    const cliPath = process.argv[1] || "deepseek-plugin-cli";
+    const { url, started } = await ensureServiceRunning(cliPath);
+    if (opts.open) openBrowser(url);
+    console.log(started ? `\u2713 \u540E\u53F0\u670D\u52A1\u5DF2\u542F\u52A8: ${url}` : `\u2713 \u540E\u53F0\u670D\u52A1\u5DF2\u5728\u8FD0\u884C: ${url}`);
+    console.log("  \u540E\u53F0\u670D\u52A1\u5E38\u9A7B\uFF0C\u53EF\u91CD\u590D\u8FD0\u884C\u672C\u547D\u4EE4\u6253\u5F00\u65B0\u9875\u9762");
+  });
+}
+
+// src/commands/service.ts
+var import_node_fs3 = require("fs");
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+function registerService(program2) {
+  const service = program2.command("service").description("\u7BA1\u7406\u5171\u4EAB\u540E\u53F0\u670D\u52A1\uFF08\u4E3A gui / menubar \u63D0\u4F9B\u914D\u7F6E\u4E0E Token \u63A5\u53E3\uFF09");
+  service.command("status").description("\u67E5\u770B\u540E\u53F0\u670D\u52A1\u8FD0\u884C\u72B6\u6001").action(() => {
+    if (!(0, import_node_fs3.existsSync)(PID_FILE)) {
+      console.log("\u540E\u53F0\u670D\u52A1\u672A\u8FD0\u884C");
+      return;
+    }
+    try {
+      const pid = parseInt((0, import_node_fs3.readFileSync)(PID_FILE, "utf-8").trim(), 10);
+      const port = (0, import_node_fs3.existsSync)(PORT_FILE) ? (0, import_node_fs3.readFileSync)(PORT_FILE, "utf-8").trim() : "?";
+      if (isProcessAlive(pid)) {
+        console.log(`\u2713 \u540E\u53F0\u670D\u52A1\u8FD0\u884C\u4E2D (PID: ${pid}, \u7AEF\u53E3: ${port})`);
+        console.log(`  \u8BBF\u95EE: http://127.0.0.1:${port}`);
+      } else {
+        console.log("\u2717 \u540E\u53F0\u670D\u52A1\u672A\u8FD0\u884C\uFF08PID \u6587\u4EF6\u6B8B\u7559\uFF0C\u5DF2\u6E05\u7406\uFF09");
+        (0, import_node_fs3.unlinkSync)(PID_FILE);
+        if ((0, import_node_fs3.existsSync)(PORT_FILE)) (0, import_node_fs3.unlinkSync)(PORT_FILE);
+      }
+    } catch {
+      console.log("\u540E\u53F0\u670D\u52A1\u672A\u8FD0\u884C");
+    }
+  });
+  service.command("stop").description("\u7EC8\u6B62\u540E\u53F0\u670D\u52A1").action(async () => {
+    if (!(0, import_node_fs3.existsSync)(PID_FILE)) {
+      console.log("\u540E\u53F0\u670D\u52A1\u672A\u8FD0\u884C");
+      return;
+    }
+    try {
+      const pid = parseInt((0, import_node_fs3.readFileSync)(PID_FILE, "utf-8").trim(), 10);
+      if (isProcessAlive(pid)) {
+        process.kill(pid, "SIGTERM");
+        for (let i = 0; i < 20; i++) {
+          if (!isProcessAlive(pid)) break;
+          await sleep(100);
+        }
+      }
+      if ((0, import_node_fs3.existsSync)(PID_FILE)) (0, import_node_fs3.unlinkSync)(PID_FILE);
+      if ((0, import_node_fs3.existsSync)(PORT_FILE)) (0, import_node_fs3.unlinkSync)(PORT_FILE);
+      console.log("\u2713 \u540E\u53F0\u670D\u52A1\u5DF2\u7EC8\u6B62");
+    } catch (e) {
+      console.error("\u2717 \u7EC8\u6B62\u5931\u8D25:", e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+  });
+}
+
 // src/cli.ts
-var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\u3001\u8BC6\u56FE/\u97F3\u9891/PDF\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.12.0");
-registerAuth(program2);
-registerVision(program2);
-registerMultimodal(program2);
-registerAudio(program2);
-registerPdf(program2);
-registerBalance(program2);
-registerSkill(program2);
-registerCompletion(program2);
-registerMenuBar(program2);
-registerToken(program2);
-program2.parseAsync().catch((err) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+if (process.argv[2] === "__daemon") {
+  runAsDaemon().catch((err) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+} else {
+  const program2 = new Command();
+  program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\u3001\u8BC6\u56FE/\u97F3\u9891/PDF\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.14.0");
+  registerAuth(program2);
+  registerVision(program2);
+  registerMultimodal(program2);
+  registerAudio(program2);
+  registerPdf(program2);
+  registerBalance(program2);
+  registerSkill(program2);
+  registerCompletion(program2);
+  registerMenuBar(program2);
+  registerToken(program2);
+  registerGui(program2);
+  registerService(program2);
+  program2.parseAsync().catch((err) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}

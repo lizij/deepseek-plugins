@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { platform, arch, tmpdir } from 'node:os';
 import { getCurrentDir, fileExists, fail } from '../utils.js';
+import { isMenuBarRunning, writeMenuBarPid, ensureServiceRunning } from '../gui/service.js';
 import menuBarSwiftSource from '../../../menubar/macos/DeepSeekMenuBarApp.swift';
 
 const currentDir = getCurrentDir();
@@ -74,13 +75,27 @@ export function registerMenuBar(program: Command) {
       const bin = await resolveMenuBarBin();
       if (!bin) fail('菜单栏应用启动失败');
 
-      // 启动菜单栏应用（detached，后台运行），传递 CLI 自身路径
+      // 单例检查：已有 menubar 存活则跳过
+      if (isMenuBarRunning()) {
+        console.log('✓ 菜单栏应用已在运行，无需重复启动');
+        return;
+      }
+
+      // 启动共享后台服务（供「打开配置界面」使用），失败不阻塞 menubar 启动
       const cliPath = process.argv[1] || 'deepseek-plugin-cli';
+      try {
+        await ensureServiceRunning(cliPath);
+      } catch (e) {
+        console.warn(`⚠ 后台服务启动失败: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      // 启动菜单栏应用（detached，后台运行），传递 CLI 自身路径
       const child = spawn(bin, [cliPath], {
         detached: true,
         stdio: 'ignore',
       });
       child.unref();
+      writeMenuBarPid(child.pid ?? 0);
       console.log('✓ 菜单栏应用已启动，查看 macOS 菜单栏右上角');
       console.log('  退出方式: 点击菜单栏图标 → 退出');
     });

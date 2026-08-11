@@ -288,6 +288,18 @@ struct DeepSeekMenuBarApp: App {
             }
             .keyboardShortcut("r")
 
+            // 打开图形化配置界面（调用 cli gui，复用/启动后台服务并打开浏览器）
+            Button {
+                let task = Process()
+                task.launchPath = "/usr/bin/env"
+                task.arguments = [CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "deepseek-plugin-cli", "gui"]
+                task.standardOutput = Pipe()
+                task.standardError = Pipe()
+                do { try task.run() } catch { /* 忽略 */ }
+            } label: {
+                Label("打开配置界面", systemImage: "gearshape")
+            }
+
             // 退出
             Button {
                 NSApplication.shared.terminate(nil)

@@ -151,6 +151,9 @@ deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
 deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本
 deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
+deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打开图形化配置界面（管理 API Key / 多模态模型 / Token 用量，后台常驻）
+deepseek-plugin-cli service status    # 查看后台服务运行状态
+deepseek-plugin-cli service stop      # 终止后台服务
 ```
 
 ### 接入 Agent
@@ -189,6 +192,7 @@ deepseek-plugin-cli menubar --build
 - **总额**：点击跳转 usage 页面
 - **可用状态**：显示账户是否可用（绿色=可用 / 红色=不可用）
 - **刷新**：点击手动刷新余额和可用状态
+- **打开配置界面**：启动/复用后台服务并在浏览器打开图形化配置页面（管理 API Key / 多模态模型 / Token 用量）
 - **退出**：关闭菜单栏应用
 
 余额和可用状态每 10 分钟自动刷新一次。
