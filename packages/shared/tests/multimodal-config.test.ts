@@ -1,20 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadConfig, loadAllConfigs, getFallbackCount, missingConfigHint } from '../src/config.js';
 
-// Mock @deepseek-plugins/shared
-vi.mock('@deepseek-plugins/shared', () => ({
+vi.mock('../src/credentials.js', () => ({
   getAllKeys: vi.fn(),
+  setKey: vi.fn(),
+  unsetKey: vi.fn(),
 }));
 
-import { getAllKeys } from '@deepseek-plugins/shared';
+import { getAllKeys, setKey, unsetKey } from '../src/credentials.js';
+import {
+  loadConfig,
+  loadAllConfigs,
+  getFallbackCount,
+  missingConfigHint,
+  setPrimaryConfig,
+  addFallbackConfig,
+  removeFallbackConfig,
+} from '../src/multimodal-config.js';
 
-describe('config', () => {
+describe('multimodal-config', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('loadConfig', () => {
-    it('所有配置齐全时返回 VisionConfig', async () => {
+    it('所有配置齐全时返回 MultimodalConfig', async () => {
       vi.mocked(getAllKeys).mockResolvedValue({
         'vision.base_url': 'https://api.openai.com/v1',
         'vision.model': 'gpt-4o',
@@ -30,16 +39,14 @@ describe('config', () => {
 
     it('缺少 base_url 时返回 null', async () => {
       vi.mocked(getAllKeys).mockResolvedValue({});
-      const config = await loadConfig();
-      expect(config).toBeNull();
+      expect(await loadConfig()).toBeNull();
     });
 
     it('缺少 model 时返回 null', async () => {
       vi.mocked(getAllKeys).mockResolvedValue({
         'vision.base_url': 'https://api.openai.com/v1',
       });
-      const config = await loadConfig();
-      expect(config).toBeNull();
+      expect(await loadConfig()).toBeNull();
     });
 
     it('缺少 apiKey 时返回 null', async () => {
@@ -47,8 +54,7 @@ describe('config', () => {
         'vision.base_url': 'https://api.openai.com/v1',
         'vision.model': 'gpt-4o',
       });
-      const config = await loadConfig();
-      expect(config).toBeNull();
+      expect(await loadConfig()).toBeNull();
     });
   });
 
@@ -61,7 +67,7 @@ describe('config', () => {
       });
       const configs = await loadAllConfigs();
       expect(configs).toHaveLength(1);
-      expect(configs[0].model).toBe('gpt-4o');
+      expect(configs[0]!.model).toBe('gpt-4o');
     });
 
     it('主模型 + 2 个备选模型时返回 3 个配置', async () => {
@@ -78,9 +84,9 @@ describe('config', () => {
       });
       const configs = await loadAllConfigs();
       expect(configs).toHaveLength(3);
-      expect(configs[0].model).toBe('primary-model');
-      expect(configs[1].model).toBe('fb0-model');
-      expect(configs[2].model).toBe('fb1-model');
+      expect(configs[0]!.model).toBe('primary-model');
+      expect(configs[1]!.model).toBe('fb0-model');
+      expect(configs[2]!.model).toBe('fb1-model');
     });
 
     it('主模型未配置但备选存在时返回备选', async () => {
@@ -91,13 +97,12 @@ describe('config', () => {
       });
       const configs = await loadAllConfigs();
       expect(configs).toHaveLength(1);
-      expect(configs[0].model).toBe('fb0-model');
+      expect(configs[0]!.model).toBe('fb0-model');
     });
 
     it('全部未配置时返回空数组', async () => {
       vi.mocked(getAllKeys).mockResolvedValue({});
-      const configs = await loadAllConfigs();
-      expect(configs).toEqual([]);
+      expect(await loadAllConfigs()).toEqual([]);
     });
 
     it('备选不连续时在第一个缺失处停止', async () => {
@@ -108,15 +113,13 @@ describe('config', () => {
         'vision.fallback.0': 'sk-fb0',
         'vision.fallback.0.base_url': 'https://api.fb0.com/v1',
         'vision.fallback.0.model': 'fb0-model',
-        // 跳过 fallback.1
         'vision.fallback.2': 'sk-fb2',
         'vision.fallback.2.base_url': 'https://api.fb2.com/v1',
         'vision.fallback.2.model': 'fb2-model',
       });
       const configs = await loadAllConfigs();
-      // 应在 fallback.1 缺失处停止，不包含 fallback.2
       expect(configs).toHaveLength(2);
-      expect(configs[1].model).toBe('fb0-model');
+      expect(configs[1]!.model).toBe('fb0-model');
     });
   });
 
@@ -142,11 +145,67 @@ describe('config', () => {
     });
   });
 
+  describe('setPrimaryConfig', () => {
+    it('仅设置 base_url', async () => {
+      await setPrimaryConfig({ baseUrl: 'https://api.test.com/v1' });
+      expect(setKey).toHaveBeenCalledWith('vision.base_url', 'https://api.test.com/v1');
+      expect(setKey).not.toHaveBeenCalledWith('vision.model', expect.anything());
+    });
+
+    it('仅设置 model', async () => {
+      await setPrimaryConfig({ model: 'gpt-4o' });
+      expect(setKey).toHaveBeenCalledWith('vision.model', 'gpt-4o');
+    });
+
+    it('同时设置 base_url 和 model', async () => {
+      await setPrimaryConfig({ baseUrl: 'https://api.test.com/v1', model: 'gpt-4o' });
+      expect(setKey).toHaveBeenCalledWith('vision.base_url', 'https://api.test.com/v1');
+      expect(setKey).toHaveBeenCalledWith('vision.model', 'gpt-4o');
+    });
+  });
+
+  describe('addFallbackConfig', () => {
+    it('在第一个空位添加备选模型', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({
+        'vision': 'sk-primary',
+        'vision.base_url': 'https://api.primary.com/v1',
+        'vision.model': 'primary-model',
+      });
+      const idx = await addFallbackConfig('https://api.fb.com/v1', 'fb-model');
+      expect(idx).toBe(0);
+      expect(setKey).toHaveBeenCalledWith('vision.fallback.0.base_url', 'https://api.fb.com/v1');
+      expect(setKey).toHaveBeenCalledWith('vision.fallback.0.model', 'fb-model');
+    });
+  });
+
+  describe('removeFallbackConfig', () => {
+    it('不存在的索引返回 false', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({});
+      expect(await removeFallbackConfig(0)).toBe(false);
+      expect(unsetKey).not.toHaveBeenCalled();
+    });
+
+    it('存在的索引删除并返回 true', async () => {
+      vi.mocked(getAllKeys).mockResolvedValue({
+        'vision': 'sk-primary',
+        'vision.base_url': 'https://api.primary.com/v1',
+        'vision.model': 'primary-model',
+        'vision.fallback.0': 'sk-fb0',
+        'vision.fallback.0.base_url': 'https://api.fb0.com/v1',
+        'vision.fallback.0.model': 'fb0-model',
+      });
+      expect(await removeFallbackConfig(0)).toBe(true);
+      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0');
+      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0.base_url');
+      expect(unsetKey).toHaveBeenCalledWith('vision.fallback.0.model');
+    });
+  });
+
   describe('missingConfigHint', () => {
     it('包含 CLI 配置引导', () => {
       const hint = missingConfigHint();
       expect(hint).toContain('deepseek-plugin-cli auth set vision');
-      expect(hint).toContain('deepseek-plugin-cli vision config');
+      expect(hint).toContain('deepseek-plugin-cli multimodal config');
       expect(hint).toContain('--base-url');
       expect(hint).toContain('--model');
     });

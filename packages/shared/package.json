@@ -17,10 +17,14 @@
     "./balance": {
       "types": "./dist/balance.d.ts",
       "import": "./dist/balance.js"
+    },
+    "./multimodal-config": {
+      "types": "./dist/multimodal-config.d.ts",
+      "import": "./dist/multimodal-config.js"
     }
   },
   "scripts": {
-    "build": "tsup src/credentials.ts src/balance.ts --format esm --dts --clean",
+    "build": "tsup src/credentials.ts src/balance.ts src/multimodal-config.ts --format esm --dts --clean",
     "dev": "tsup src/credentials.ts --format esm --watch",
     "test": "vitest run"
   },

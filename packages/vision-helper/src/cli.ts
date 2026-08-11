@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { loadAllConfigs, missingConfigHint, DEFAULT_PROMPT } from './config.js';
-import { analyzeImageWithFallback } from './vision.js';
+import { loadAllConfigs, missingConfigHint, DEFAULT_PROMPT } from '@deepseek-plugins/shared/multimodal-config';
+import { analyzeWithFallback } from './vision.js';
 
 const program = new Command();
 
 program
-  .name('vision-analyze-helper')
-  .description('辅助纯文本模型识图：调用视觉模型分析图片，为 DeepSeek-V4 等纯文本模型补充识图能力')
+  .name('vision-helper')
+  .description('辅助纯文本模型识图：调用多模态模型分析图片，为 DeepSeek-V4 等纯文本模型补充识图能力')
   .version('0.1.0');
 
 program
@@ -25,8 +25,8 @@ program
       process.exit(1);
     }
     try {
-      const text = await analyzeImageWithFallback(configs, {
-        image: opts.image,
+      const text = await analyzeWithFallback(configs, 'image', {
+        input: opts.image,
         prompt: opts.prompt,
         detail: opts.detail,
       });

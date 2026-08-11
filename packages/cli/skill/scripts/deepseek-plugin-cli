@@ -17042,15 +17042,16 @@ function registerAuth(program3) {
   });
 }
 
-// ../vision-analyze-helper/dist/chunk-DQAK4BEI.js
+// ../shared/dist/multimodal-config.js
 var DEFAULT_PROMPT = "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u5F20\u56FE\u7247\u7684\u5185\u5BB9\u3002";
+var CONFIG_PREFIX = "vision";
 async function loadAllConfigs() {
   const all = await getAllKeys();
   const configs = [];
-  const primary = readConfigByPrefix(all, "vision");
+  const primary = readConfigByPrefix(all, CONFIG_PREFIX);
   if (primary) configs.push(primary);
   for (let i = 0; ; i++) {
-    const cfg = readConfigByPrefix(all, `vision.fallback.${i}`);
+    const cfg = readConfigByPrefix(all, `${CONFIG_PREFIX}.fallback.${i}`);
     if (!cfg) break;
     configs.push(cfg);
   }
@@ -17067,20 +17068,102 @@ async function getFallbackCount() {
   const configs = await loadAllConfigs();
   return Math.max(0, configs.length - 1);
 }
+async function setPrimaryConfig(opts) {
+  if (opts.baseUrl) {
+    await setKey(`${CONFIG_PREFIX}.base_url`, opts.baseUrl);
+  }
+  if (opts.model) {
+    await setKey(`${CONFIG_PREFIX}.model`, opts.model);
+  }
+}
+async function addFallbackConfig(baseUrl, model) {
+  const idx = await getFallbackCount();
+  await setKey(`${CONFIG_PREFIX}.fallback.${idx}.base_url`, baseUrl);
+  await setKey(`${CONFIG_PREFIX}.fallback.${idx}.model`, model);
+  return idx;
+}
+async function removeFallbackConfig(idx) {
+  const all = await getAllKeys();
+  const hasTarget = all[`${CONFIG_PREFIX}.fallback.${idx}`] || all[`${CONFIG_PREFIX}.fallback.${idx}.base_url`] || all[`${CONFIG_PREFIX}.fallback.${idx}.model`];
+  if (!hasTarget) return false;
+  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}`);
+  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}.base_url`);
+  await unsetKey(`${CONFIG_PREFIX}.fallback.${idx}.model`);
+  const total = await getFallbackCount();
+  for (let i = idx + 1; i <= total + 1; i++) {
+    const srcPrefix = `${CONFIG_PREFIX}.fallback.${i}`;
+    const dstPrefix = `${CONFIG_PREFIX}.fallback.${i - 1}`;
+    const apiKey = all[srcPrefix];
+    const baseUrl = all[`${srcPrefix}.base_url`];
+    const model = all[`${srcPrefix}.model`];
+    if (apiKey) await setKey(dstPrefix, apiKey);
+    if (baseUrl) await setKey(`${dstPrefix}.base_url`, baseUrl);
+    if (model) await setKey(`${dstPrefix}.model`, model);
+    await unsetKey(srcPrefix);
+    await unsetKey(`${srcPrefix}.base_url`);
+    await unsetKey(`${srcPrefix}.model`);
+  }
+  return true;
+}
 function missingConfigHint() {
   return [
-    "\u89C6\u89C9\u6A21\u578B\u672A\u914D\u7F6E\uFF0C\u8BF7\u6309\u4EE5\u4E0B\u6B65\u9AA4\u8BBE\u7F6E\uFF1A",
+    "\u591A\u6A21\u6001\u6A21\u578B\u672A\u914D\u7F6E\uFF0C\u8BF7\u6309\u4EE5\u4E0B\u6B65\u9AA4\u8BBE\u7F6E\uFF1A",
     "1. \u8BBE\u7F6E API Key\uFF08\u4EA4\u4E92\u5F0F\u8F93\u5165\uFF09\uFF1A",
     "   deepseek-plugin-cli auth set vision",
     "2. \u914D\u7F6E base_url \u4E0E model\uFF1A",
-    "   deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o"
+    "   deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o",
+    "   \uFF08\u540C\u4E00\u5957\u914D\u7F6E\u540C\u65F6\u652F\u6301\u56FE\u7247 / \u97F3\u9891 / PDF \u8F93\u5165\uFF09"
   ].join("\n");
 }
 
-// ../vision-analyze-helper/dist/chunk-3ODJP5R2.js
+// ../vision-helper/dist/chunk-T6JCOMB3.js
 var import_promises = require("fs/promises");
 var import_path2 = require("path");
+function isPassthroughInput(input) {
+  return /^https?:\/\//i.test(input) || /^data:/i.test(input);
+}
+async function normalizeToDataUri(input, mimeByExt, typeLabel) {
+  if (isPassthroughInput(input)) {
+    return input;
+  }
+  const buf = await (0, import_promises.readFile)(input);
+  const ext = (0, import_path2.extname)(input).toLowerCase();
+  const mime = mimeByExt[ext];
+  if (!mime) {
+    throw new Error(`\u4E0D\u652F\u6301\u7684${typeLabel}\u683C\u5F0F: ${ext}`);
+  }
+  return `data:${mime};base64,${buf.toString("base64")}`;
+}
+
+// ../vision-helper/dist/chunk-KP7F6F4Q.js
+var import_path3 = require("path");
 var MIME_BY_EXT = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
+  ".webm": "audio/webm"
+};
+var FORMAT_BY_EXT = {
+  ".mp3": "mp3",
+  ".wav": "wav",
+  ".m4a": "m4a",
+  ".aac": "aac",
+  ".ogg": "ogg",
+  ".flac": "flac",
+  ".webm": "webm"
+};
+function guessAudioFormat(filePath) {
+  return FORMAT_BY_EXT[(0, import_path3.extname)(filePath).toLowerCase()] ?? "mp3";
+}
+async function normalizeAudio(input) {
+  return normalizeToDataUri(input, MIME_BY_EXT, "\u97F3\u9891");
+}
+
+// ../vision-helper/dist/chunk-XLH7BI6X.js
+var MIME_BY_EXT2 = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -17088,44 +17171,72 @@ var MIME_BY_EXT = {
   ".webp": "image/webp",
   ".bmp": "image/bmp"
 };
-function guessMime(filePath) {
-  const ext = (0, import_path2.extname)(filePath).toLowerCase();
-  const mime = MIME_BY_EXT[ext];
-  if (!mime) {
-    throw new Error(`\u4E0D\u652F\u6301\u7684\u56FE\u7247\u683C\u5F0F: ${ext}`);
-  }
-  return mime;
-}
 async function normalizeImage(input) {
-  if (/^https?:\/\//i.test(input) || /^data:/i.test(input)) {
-    return input;
-  }
-  const buf = await (0, import_promises.readFile)(input);
-  const mime = guessMime(input);
-  return `data:${mime};base64,${buf.toString("base64")}`;
+  return normalizeToDataUri(input, MIME_BY_EXT2, "\u56FE\u7247");
 }
 
-// ../vision-analyze-helper/dist/chunk-6UTOD4TS.js
+// ../vision-helper/dist/chunk-FOMKOAKZ.js
+var import_path4 = require("path");
+var MIME_BY_EXT3 = {
+  ".pdf": "application/pdf"
+};
+async function normalizePdf(input) {
+  return normalizeToDataUri(input, MIME_BY_EXT3, "\u6587\u6863");
+}
+function extractPdfFilename(input) {
+  if (/^data:/i.test(input)) {
+    return "document.pdf";
+  }
+  const name = (0, import_path4.basename)(input);
+  return name.endsWith(".pdf") ? name : `${name}.pdf`;
+}
+
+// ../vision-helper/dist/chunk-RLCRIQCL.js
 var FETCH_TIMEOUT_MS = 12e4;
 var GLOBAL_TIMEOUT_MS = 18e4;
-var VisionApiError = class extends Error {
+var MultimodalApiError = class extends Error {
   status;
   constructor(status, message) {
     super(message);
-    this.name = "VisionApiError";
+    this.name = "MultimodalApiError";
     this.status = status;
   }
 };
-function isRetryable(err) {
-  if (err instanceof VisionApiError) {
-    return err.status >= 500 || err.status === 429;
+function shouldSkipRemaining(err) {
+  if (err instanceof MultimodalApiError) {
+    return err.status === 401 || err.status === 403;
   }
-  return true;
+  return false;
 }
-async function analyzeImage(config, params, signal) {
-  const imageUri = await normalizeImage(params.image);
-  const detail = params.detail ?? "high";
-  const prompt = params.prompt?.trim() || DEFAULT_PROMPT;
+async function buildContentPart(modality, params) {
+  switch (modality) {
+    case "image": {
+      const imageUri = await normalizeImage(params.input);
+      const detail = params.detail ?? "high";
+      return { type: "image_url", image_url: { url: imageUri, detail } };
+    }
+    case "audio": {
+      const dataUri = await normalizeAudio(params.input);
+      const format = guessAudioFormat(params.input);
+      return { type: "input_audio", input_audio: { data: dataUri, format } };
+    }
+    case "pdf": {
+      const dataUri = await normalizePdf(params.input);
+      const filename = extractPdfFilename(params.input);
+      return { type: "file", file: { file_data: dataUri, filename } };
+    }
+    default:
+      throw new Error(`\u4E0D\u652F\u6301\u7684\u6A21\u6001\u7C7B\u578B: ${modality}`);
+  }
+}
+var DEFAULT_PROMPT_BY_MODALITY = {
+  image: DEFAULT_PROMPT,
+  audio: "\u8BF7\u9010\u5B57\u8F6C\u5199\uFF08ASR\uFF09\u8FD9\u6BB5\u97F3\u9891\u4E2D\u6240\u8BF4\u7684\u6BCF\u4E00\u53E5\u8BDD\uFF0C\u539F\u6837\u8F93\u51FA\u6587\u5B57\u5185\u5BB9\uFF0C\u4E0D\u8981\u603B\u7ED3\u3001\u4E0D\u8981\u7FFB\u8BD1\u3001\u4E0D\u8981\u8865\u5145\u8BF4\u660E\u3002",
+  pdf: "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u4E2A PDF \u6587\u6863\u7684\u5185\u5BB9\u3002"
+};
+async function analyze(config, modality, params, signal) {
+  const prompt = params.prompt?.trim() || DEFAULT_PROMPT_BY_MODALITY[modality];
+  const contentPart = await buildContentPart(modality, params);
   const url = `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -17148,14 +17259,10 @@ async function analyzeImage(config, params, signal) {
             role: "user",
             content: [
               { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: { url: imageUri, detail }
-              }
+              contentPart
             ]
           }
         ]
-        // 不传 max_tokens，由各 API 使用自身默认值（不同模型上限不同）
       }),
       signal: controller.signal
     });
@@ -17163,16 +17270,16 @@ async function analyzeImage(config, params, signal) {
     clearTimeout(timer);
   }
   if (!resp.ok) {
-    throw new VisionApiError(resp.status, `\u89C6\u89C9\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})`);
+    throw new MultimodalApiError(resp.status, `\u591A\u6A21\u6001\u6A21\u578B\u8BF7\u6C42\u5931\u8D25 (HTTP ${resp.status})`);
   }
   const data = await resp.json();
   const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error("\u89C6\u89C9\u6A21\u578B\u672A\u8FD4\u56DE\u5185\u5BB9");
+  if (!text) throw new Error("\u591A\u6A21\u6001\u6A21\u578B\u672A\u8FD4\u56DE\u5185\u5BB9");
   return text;
 }
-async function analyzeImageWithFallback(configs, params) {
+async function analyzeWithFallback(configs, modality, params) {
   if (configs.length === 0) {
-    throw new Error("\u672A\u914D\u7F6E\u4EFB\u4F55\u89C6\u89C9\u6A21\u578B");
+    throw new Error("\u672A\u914D\u7F6E\u4EFB\u4F55\u591A\u6A21\u6001\u6A21\u578B");
   }
   const globalController = new AbortController();
   const globalTimer = setTimeout(() => globalController.abort(), GLOBAL_TIMEOUT_MS);
@@ -17184,28 +17291,25 @@ async function analyzeImageWithFallback(configs, params) {
         continue;
       }
       try {
-        return await analyzeImage(config, params, globalController.signal);
+        return await analyze(config, modality, params, globalController.signal);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
-        if (!isRetryable(err) && err instanceof VisionApiError && err.status !== 401) {
-          break;
-        }
+        if (shouldSkipRemaining(err)) break;
       }
     }
   } finally {
     clearTimeout(globalTimer);
   }
   throw new Error(
-    `\u6240\u6709\u89C6\u89C9\u6A21\u578B\u5747\u8C03\u7528\u5931\u8D25 (${configs.length} \u4E2A):
+    `\u6240\u6709\u591A\u6A21\u6001\u6A21\u578B\u5747\u8C03\u7528\u5931\u8D25 (${configs.length} \u4E2A):
 ${errors.join("\n")}`
   );
 }
 
 // src/commands/vision.ts
 function registerVision(program3) {
-  const vision = program3.command("vision").description("\u8C03\u7528\u89C6\u89C9\u6A21\u578B\u5206\u6790\u56FE\u7247\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BC6\u56FE\u80FD\u529B");
-  vision.argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PROMPT).option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
+  program3.command("vision").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u56FE\u7247\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BC6\u56FE\u80FD\u529B\uFF08\u4E0E audio/pdf \u5171\u4EAB\u6A21\u578B\u914D\u7F6E\uFF09").argument("<image>", "\u56FE\u7247\u8DEF\u5F84\u3001URL \u6216 base64").option("-p, --prompt <text>", "\u5BF9\u56FE\u7247\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PROMPT).option("-d, --detail <level>", "\u91C7\u6837\u7CBE\u5EA6\uFF1Alow \u66F4\u5FEB\u66F4\u7701 token\uFF0Chigh \u66F4\u7CBE\u7EC6", "high").action(async (image, opts) => {
     if (!["low", "high"].includes(opts.detail)) {
       console.error("\u9519\u8BEF\uFF1A--detail \u4EC5\u652F\u6301 low \u6216 high");
       process.exit(1);
@@ -17216,8 +17320,8 @@ function registerVision(program3) {
       process.exit(1);
     }
     try {
-      const text = await analyzeImageWithFallback(configs, {
-        image,
+      const text = await analyzeWithFallback(configs, "image", {
+        input: image,
         prompt: opts.prompt,
         detail: opts.detail
       });
@@ -17228,39 +17332,37 @@ function registerVision(program3) {
       process.exit(1);
     }
   });
-  vision.command("config").description("\u914D\u7F6E\u4E3B\u89C6\u89C9\u6A21\u578B base_url \u548C model").option("-u, --base-url <url>", "\u89C6\u89C9\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").option("-m, --model <name>", "\u89C6\u89C9\u6A21\u578B\u540D\u79F0").action(async (opts) => {
+}
+
+// src/commands/multimodal.ts
+function registerMultimodal(program3) {
+  const multimodal = program3.command("multimodal").description("\u7BA1\u7406\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\uFF08base_url / model / \u5907\u9009\u5BB9\u707E\uFF09\uFF0C\u540C\u65F6\u670D\u52A1 vision/audio/pdf");
+  multimodal.command("config").description("\u914D\u7F6E\u4E3B\u591A\u6A21\u6001\u6A21\u578B base_url \u548C model\uFF08\u540C\u65F6\u670D\u52A1 vision/audio/pdf\uFF09").option("-u, --base-url <url>", "\u591A\u6A21\u6001\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").option("-m, --model <name>", "\u591A\u6A21\u6001\u6A21\u578B\u540D\u79F0").action(async (opts) => {
     if (!opts.baseUrl && !opts.model) {
       console.error("\u8BF7\u63D0\u4F9B --base-url \u6216 --model");
-      console.error("\u793A\u4F8B: deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o");
+      console.error("\u793A\u4F8B: deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o");
       process.exit(1);
     }
-    if (opts.baseUrl) {
-      await setKey("vision.base_url", opts.baseUrl);
-      console.log(`\u2713 base_url \u5DF2\u4FDD\u5B58: ${opts.baseUrl}`);
-    }
-    if (opts.model) {
-      await setKey("vision.model", opts.model);
-      console.log(`\u2713 model \u5DF2\u4FDD\u5B58: ${opts.model}`);
-    }
+    await setPrimaryConfig({ baseUrl: opts.baseUrl, model: opts.model });
+    if (opts.baseUrl) console.log(`\u2713 base_url \u5DF2\u4FDD\u5B58: ${opts.baseUrl}`);
+    if (opts.model) console.log(`\u2713 model \u5DF2\u4FDD\u5B58: ${opts.model}`);
   });
-  const fallback = vision.command("fallback").description("\u7BA1\u7406\u5907\u9009\u89C6\u89C9\u6A21\u578B\uFF08\u5BB9\u707E\u7528\uFF09");
-  fallback.command("add").description("\u6DFB\u52A0\u4E00\u4E2A\u5907\u9009\u89C6\u89C9\u6A21\u578B").requiredOption("-u, --base-url <url>", "\u89C6\u89C9\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").requiredOption("-m, --model <name>", "\u89C6\u89C9\u6A21\u578B\u540D\u79F0").action(async (opts) => {
-    const idx = await getFallbackCount();
-    await setKey(`vision.fallback.${idx}.base_url`, opts.baseUrl);
-    await setKey(`vision.fallback.${idx}.model`, opts.model);
+  const fallback = multimodal.command("fallback").description("\u7BA1\u7406\u5907\u9009\u591A\u6A21\u6001\u6A21\u578B\uFF08\u5BB9\u707E\u7528\uFF0C\u540C\u65F6\u670D\u52A1 vision/audio/pdf\uFF09");
+  fallback.command("add").description("\u6DFB\u52A0\u4E00\u4E2A\u5907\u9009\u591A\u6A21\u6001\u6A21\u578B").requiredOption("-u, --base-url <url>", "\u591A\u6A21\u6001\u6A21\u578B API base URL\uFF08OpenAI \u517C\u5BB9\uFF09").requiredOption("-m, --model <name>", "\u591A\u6A21\u6001\u6A21\u578B\u540D\u79F0").action(async (opts) => {
+    const idx = await addFallbackConfig(opts.baseUrl, opts.model);
     console.log(`\u2713 \u5907\u9009\u6A21\u578B #${idx} \u5DF2\u6DFB\u52A0:`);
     console.log(`  base_url: ${opts.baseUrl}`);
     console.log(`  model: ${opts.model}`);
     console.log(`  \u8BF7\u8FD0\u884C 'deepseek-plugin-cli auth set vision.fallback.${idx}' \u8BBE\u7F6E\u5176 API Key`);
   });
-  fallback.command("list").description("\u5217\u51FA\u6240\u6709\u5DF2\u914D\u7F6E\u7684\u89C6\u89C9\u6A21\u578B\uFF08\u4E3B\u6A21\u578B + \u5907\u9009\uFF09").action(async () => {
+  fallback.command("list").description("\u5217\u51FA\u6240\u6709\u5DF2\u914D\u7F6E\u7684\u591A\u6A21\u6001\u6A21\u578B\uFF08\u4E3B\u6A21\u578B + \u5907\u9009\uFF09").action(async () => {
     const configs = await loadAllConfigs();
     if (configs.length === 0) {
-      console.log("\u672A\u914D\u7F6E\u4EFB\u4F55\u89C6\u89C9\u6A21\u578B\u3002");
+      console.log("\u672A\u914D\u7F6E\u4EFB\u4F55\u591A\u6A21\u6001\u6A21\u578B\u3002");
       console.log(missingConfigHint());
       return;
     }
-    console.log("\u5DF2\u914D\u7F6E\u7684\u89C6\u89C9\u6A21\u578B (\u6309\u4F18\u5148\u7EA7\u6392\u5217):\n");
+    console.log("\u5DF2\u914D\u7F6E\u7684\u591A\u6A21\u6001\u6A21\u578B (\u6309\u4F18\u5148\u7EA7\u6392\u5217):\n");
     configs.forEach((cfg, i) => {
       const label = i === 0 ? "\u4E3B\u6A21\u578B" : `\u5907\u9009 #${i - 1}`;
       console.log(`  [${label}] ${cfg.model} @ ${cfg.baseUrl}`);
@@ -17272,30 +17374,58 @@ function registerVision(program3) {
       console.error("\u9519\u8BEF\uFF1A\u8BF7\u63D0\u4F9B\u6709\u6548\u7684\u5907\u9009\u6A21\u578B\u7D22\u5F15\uFF08\u4ECE 0 \u5F00\u59CB\u7684\u975E\u8D1F\u6574\u6570\uFF09");
       process.exit(1);
     }
-    const all = await getAllKeys();
-    const hasTarget = all[`vision.fallback.${idx}`] || all[`vision.fallback.${idx}.base_url`] || all[`vision.fallback.${idx}.model`];
-    if (!hasTarget) {
+    const ok = await removeFallbackConfig(idx);
+    if (!ok) {
       console.error(`\u9519\u8BEF\uFF1A\u5907\u9009\u6A21\u578B #${idx} \u4E0D\u5B58\u5728`);
       process.exit(1);
     }
-    await unsetKey(`vision.fallback.${idx}`);
-    await unsetKey(`vision.fallback.${idx}.base_url`);
-    await unsetKey(`vision.fallback.${idx}.model`);
-    const total = await getFallbackCount();
-    for (let i = idx + 1; i <= total + 1; i++) {
-      const srcPrefix = `vision.fallback.${i}`;
-      const dstPrefix = `vision.fallback.${i - 1}`;
-      const apiKey = all[srcPrefix];
-      const baseUrl = all[`${srcPrefix}.base_url`];
-      const model = all[`${srcPrefix}.model`];
-      if (apiKey) await setKey(dstPrefix, apiKey);
-      if (baseUrl) await setKey(`${dstPrefix}.base_url`, baseUrl);
-      if (model) await setKey(`${dstPrefix}.model`, model);
-      await unsetKey(srcPrefix);
-      await unsetKey(`${srcPrefix}.base_url`);
-      await unsetKey(`${srcPrefix}.model`);
-    }
     console.log(`\u2713 \u5907\u9009\u6A21\u578B #${idx} \u5DF2\u5220\u9664\uFF0C\u540E\u7EED\u7D22\u5F15\u5DF2\u91CD\u6392`);
+  });
+}
+
+// src/commands/audio.ts
+var DEFAULT_AUDIO_PROMPT = "\u8BF7\u9010\u5B57\u8F6C\u5199\uFF08ASR\uFF09\u8FD9\u6BB5\u97F3\u9891\u4E2D\u6240\u8BF4\u7684\u6BCF\u4E00\u53E5\u8BDD\uFF0C\u539F\u6837\u8F93\u51FA\u6587\u5B57\u5185\u5BB9\uFF0C\u4E0D\u8981\u603B\u7ED3\u3001\u4E0D\u8981\u7FFB\u8BD1\u3001\u4E0D\u8981\u8865\u5145\u8BF4\u660E\u3002";
+function registerAudio(program3) {
+  program3.command("audio").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790\u97F3\u9891\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u8BED\u97F3\u8BC6\u522B\u80FD\u529B").argument("<input>", "\u97F3\u9891\u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9\u97F3\u9891\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_AUDIO_PROMPT).action(async (input, opts) => {
+    const configs = await loadAllConfigs();
+    if (configs.length === 0) {
+      console.error(missingConfigHint());
+      process.exit(1);
+    }
+    try {
+      const text = await analyzeWithFallback(configs, "audio", {
+        input,
+        prompt: opts.prompt
+      });
+      process.stdout.write(text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\u97F3\u9891\u8BC6\u522B\u5931\u8D25: ${msg}`);
+      process.exit(1);
+    }
+  });
+}
+
+// src/commands/pdf.ts
+var DEFAULT_PDF_PROMPT = "\u8BF7\u8BE6\u7EC6\u63CF\u8FF0\u8FD9\u4E2A PDF \u6587\u6863\u7684\u5185\u5BB9\u3002";
+function registerPdf(program3) {
+  program3.command("pdf").description("\u8C03\u7528\u591A\u6A21\u6001\u6A21\u578B\u5206\u6790 PDF \u6587\u6863\uFF0C\u4E3A\u7EAF\u6587\u672C\u6A21\u578B\u8865\u5145\u6587\u6863\u7406\u89E3\u80FD\u529B").argument("<input>", "PDF \u8F93\u5165\uFF1A\u672C\u5730\u6587\u4EF6\u8DEF\u5F84\u3001http(s) URL \u6216 data: base64 URI").option("-p, --prompt <text>", "\u5BF9 PDF \u6587\u6863\u7684\u63D0\u95EE\u5185\u5BB9", DEFAULT_PDF_PROMPT).action(async (input, opts) => {
+    const configs = await loadAllConfigs();
+    if (configs.length === 0) {
+      console.error(missingConfigHint());
+      process.exit(1);
+    }
+    try {
+      const text = await analyzeWithFallback(configs, "pdf", {
+        input,
+        prompt: opts.prompt
+      });
+      process.stdout.write(text);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`PDF \u8BC6\u522B\u5931\u8D25: ${msg}`);
+      process.exit(1);
+    }
   });
 }
 
@@ -17445,9 +17575,9 @@ function registerSkill(program3) {
     console.log("  # DeepSeek API Key");
     console.log("  deepseek-plugin-cli auth set deepseek");
     console.log("");
-    console.log("  # \u89C6\u89C9\u6A21\u578B");
+    console.log("  # \u591A\u6A21\u6001\u6A21\u578B");
     console.log("  deepseek-plugin-cli auth set vision");
-    console.log("  deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o");
+    console.log("  deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o");
   });
   skill.command("update").description("\u66F4\u65B0\u5DF2\u5B89\u88C5\u7684 Skill \u5230\u6700\u65B0\u7248\u672C").option("--agent <agent>", "\u76EE\u6807 Agent \u7C7B\u578B (trae/claude/all)", "trae").action(async (opts) => {
     console.log("==> \u66F4\u65B0 Skill...");
@@ -17474,9 +17604,9 @@ _deepseek_services() {
   local -a services
   services=(
     'deepseek:DeepSeek \u4E3B API Key'
-    'vision:\u4E3B\u89C6\u89C9\u6A21\u578B API Key'
-    'vision.base_url:\u4E3B\u89C6\u89C9\u6A21\u578B base URL'
-    'vision.model:\u4E3B\u89C6\u89C9\u6A21\u578B\u540D\u79F0'
+    'vision:\u4E3B\u591A\u6A21\u6001\u6A21\u578B API Key'
+    'vision.base_url:\u4E3B\u591A\u6A21\u6001\u6A21\u578B base URL'
+    'vision.model:\u4E3B\u591A\u6A21\u6001\u6A21\u578B\u540D\u79F0'
   )
   _describe 'service' services
 }
@@ -17504,14 +17634,14 @@ _deepseek_auth() {
   esac
 }
 
-_deepseek_vision_fallback() {
+_deepseek_multimodal_fallback() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
   local -a cmds
   cmds=(
-    'add:\u6DFB\u52A0\u5907\u9009\u89C6\u89C9\u6A21\u578B'
-    'list:\u5217\u51FA\u6240\u6709\u89C6\u89C9\u6A21\u578B'
-    'remove:\u5220\u9664\u5907\u9009\u89C6\u89C9\u6A21\u578B'
+    'add:\u6DFB\u52A0\u5907\u9009\u591A\u6A21\u6001\u6A21\u578B'
+    'list:\u5217\u51FA\u6240\u6709\u591A\u6A21\u6001\u6A21\u578B'
+    'remove:\u5220\u9664\u5907\u9009\u591A\u6A21\u6001\u6A21\u578B'
   )
   _arguments -C \\
     '1:fallback \u5B50\u547D\u4EE4:->cmd' \\
@@ -17531,20 +17661,19 @@ _deepseek_vision_fallback() {
   esac
 }
 
-_deepseek_vision() {
+_deepseek_multimodal() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
+  local -a cmds
+  cmds=(
+    'config:\u914D\u7F6E\u4E3B\u591A\u6A21\u6001\u6A21\u578B'
+    'fallback:\u7BA1\u7406\u5907\u9009\u591A\u6A21\u6001\u6A21\u578B'
+  )
   _arguments -C \\
-    '(-p --prompt)'{-p,--prompt}'[\u63D0\u95EE\u5185\u5BB9]:\u63D0\u793A\u8BCD:' \\
-    '(-d --detail)'{-d,--detail}'[\u7EC6\u8282\u7EA7\u522B]:\u7EA7\u522B:(low high)' \\
-    '1:vision \u5B50\u547D\u4EE4\u6216\u56FE\u7247:->cmd' \\
+    '1:multimodal \u5B50\u547D\u4EE4:->cmd' \\
     '*::\u53C2\u6570:->args'
   case $state in
-    cmd)
-      _alternative \\
-        'files:\u56FE\u7247\u8DEF\u5F84:_files' \\
-        'commands:vision \u5B50\u547D\u4EE4:(config fallback)'
-      ;;
+    cmd) _describe 'multimodal \u5B50\u547D\u4EE4' cmds ;;
     args)
       case \${words[2]} in
         config)
@@ -17552,10 +17681,29 @@ _deepseek_vision() {
             '--base-url[API base URL]:URL:' \\
             '--model[\u6A21\u578B\u540D\u79F0]:\u6A21\u578B:'
           ;;
-        fallback) _deepseek_vision_fallback ;;
+        fallback) _deepseek_multimodal_fallback ;;
       esac
       ;;
   esac
+}
+
+_deepseek_vision() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[\u63D0\u95EE\u5185\u5BB9]:\u63D0\u793A\u8BCD:' \\
+    '(-d --detail)'{-d,--detail}'[\u7EC6\u8282\u7EA7\u522B]:\u7EA7\u522B:(low high)' \\
+    '1:\u56FE\u7247\u8DEF\u5F84:_files'
+}
+
+_deepseek_audio() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[\u63D0\u95EE\u5185\u5BB9]:\u63D0\u793A\u8BCD:' \\
+    '1:\u97F3\u9891\u6587\u4EF6:_files'
+}
+
+_deepseek_pdf() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[\u63D0\u95EE\u5185\u5BB9]:\u63D0\u793A\u8BCD:' \\
+    '1:PDF \u6587\u4EF6:_files -g "*.pdf"'
 }
 
 _deepseek_skill() {
@@ -17585,7 +17733,10 @@ _deepseek_plugin_cli() {
   local -a subcmds
   subcmds=(
     'auth:\u7BA1\u7406 API Key'
-    'vision:\u56FE\u7247\u8BC6\u522B\u4E0E\u89C6\u89C9\u6A21\u578B\u914D\u7F6E'
+    'vision:\u56FE\u7247\u8BC6\u522B\uFF08\u8F85\u52A9\u8BC6\u56FE\uFF09'
+    'multimodal:\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\uFF08config/fallback\uFF09'
+    'audio:\u97F3\u9891\u8F6C\u5199\uFF08ASR\uFF09'
+    'pdf:PDF \u6587\u6863\u7406\u89E3'
     'balance:\u67E5\u8BE2 DeepSeek API \u4F59\u989D'
     'skill:\u5B89\u88C5\u4E0E\u66F4\u65B0 Skill'
     'menubar:\u542F\u52A8 macOS \u83DC\u5355\u680F\u5E94\u7528'
@@ -17602,6 +17753,9 @@ _deepseek_plugin_cli() {
       case \${words[2]} in
         auth) _deepseek_auth ;;
         vision) _deepseek_vision ;;
+        multimodal) _deepseek_multimodal ;;
+        audio) _deepseek_audio ;;
+        pdf) _deepseek_pdf ;;
         balance) _arguments '--json[\u8F93\u51FA JSON \u683C\u5F0F]' ;;
         skill) _deepseek_skill ;;
         token) _deepseek_token ;;
@@ -17615,9 +17769,9 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 var BASH_COMPLETION = `# \u7531 deepseek-plugin-cli completion bash \u751F\u6210
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill menubar token"
+  local subcommands="auth vision multimodal audio pdf balance skill menubar token"
   local auth_cmds="set get unset list"
-  local vision_cmds="config fallback"
+  local multimodal_cmds="config fallback"
   local fallback_cmds="add list remove"
   local skill_cmds="install update"
   local token_cmds="scan today buckets report clear"
@@ -17628,7 +17782,10 @@ _deepseek_plugin_cli_completion() {
     2)
       case "\${COMP_WORDS[1]}" in
         auth) COMPREPLY=( $(compgen -W "$auth_cmds" -- "$cur") ) ;;
-        vision) COMPREPLY=( $(compgen -W "$vision_cmds -p -d" -- "$cur") ) ;;
+        vision) COMPREPLY=( $(compgen -W "-p --prompt -d --detail" -- "$cur") ) ;;
+        multimodal) COMPREPLY=( $(compgen -W "$multimodal_cmds" -- "$cur") ) ;;
+        audio) COMPREPLY=( $(compgen -W "-p --prompt" -- "$cur") ) ;;
+        pdf) COMPREPLY=( $(compgen -W "-p --prompt" -- "$cur") ) ;;
         skill) COMPREPLY=( $(compgen -W "$skill_cmds" -- "$cur") ) ;;
         token) COMPREPLY=( $(compgen -W "$token_cmds" -- "$cur") ) ;;
       esac
@@ -17640,7 +17797,7 @@ _deepseek_plugin_cli_completion() {
             set|get|unset) COMPREPLY=( $(compgen -W "$services" -- "$cur") ) ;;
           esac
           ;;
-        vision)
+        multimodal)
           case "\${COMP_WORDS[2]}" in
             config) COMPREPLY=( $(compgen -W "--base-url --model" -- "$cur") ) ;;
             fallback) COMPREPLY=( $(compgen -W "$fallback_cmds" -- "$cur") ) ;;
@@ -17650,7 +17807,7 @@ _deepseek_plugin_cli_completion() {
       ;;
     4)
       case "\${COMP_WORDS[1]} \${COMP_WORDS[2]}" in
-        "vision fallback")
+        "multimodal fallback")
           case "\${COMP_WORDS[3]}" in
             add) COMPREPLY=( $(compgen -W "--base-url --model" -- "$cur") ) ;;
           esac
@@ -17755,12 +17912,12 @@ var import_fs3 = require("fs");
 var import_crypto2 = require("crypto");
 var import_module = require("module");
 var import_os2 = require("os");
-var import_path3 = require("path");
+var import_path5 = require("path");
 var import_meta2 = {};
 var require2 = (0, import_module.createRequire)(import_meta2.url || "file:///noop.js");
-var DATA_DIR = (0, import_path3.join)((0, import_os2.homedir)(), ".deepseek-plugins");
-var BUCKET_FILE = (0, import_path3.join)(DATA_DIR, "token-buckets.json");
-var SCAN_META_FILE = (0, import_path3.join)(DATA_DIR, "token-scan-meta.json");
+var DATA_DIR = (0, import_path5.join)((0, import_os2.homedir)(), ".deepseek-plugins");
+var BUCKET_FILE = (0, import_path5.join)(DATA_DIR, "token-buckets.json");
+var SCAN_META_FILE = (0, import_path5.join)(DATA_DIR, "token-scan-meta.json");
 var BUCKET_MS = 30 * 60 * 1e3;
 var BUCKET_RETENTION_DAYS = 90;
 var RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1e3;
@@ -17815,14 +17972,14 @@ function saveScanMeta(meta) {
   (0, import_fs3.writeFileSync)(SCAN_META_FILE, JSON.stringify(meta), "utf-8");
 }
 function findClaudeCodeLogs() {
-  const base = (0, import_path3.join)((0, import_os2.homedir)(), ".claude", "projects");
+  const base = (0, import_path5.join)((0, import_os2.homedir)(), ".claude", "projects");
   if (!(0, import_fs3.existsSync)(base)) return [];
   const targets = [];
   const walk = (dir) => {
     const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
     for (const e of entries) {
       if (e.isSymbolicLink()) continue;
-      const full = (0, import_path3.join)(dir, e.name);
+      const full = (0, import_path5.join)(dir, e.name);
       if (e.isDirectory()) {
         walk(full);
       } else if (e.name.endsWith(".jsonl")) {
@@ -17838,8 +17995,8 @@ function findClaudeCodeLogs() {
 }
 function findCodexLogs() {
   const candidates = [
-    (0, import_path3.join)((0, import_os2.homedir)(), ".codex", "logs"),
-    (0, import_path3.join)((0, import_os2.homedir)(), ".config", "codex", "logs")
+    (0, import_path5.join)((0, import_os2.homedir)(), ".codex", "logs"),
+    (0, import_path5.join)((0, import_os2.homedir)(), ".config", "codex", "logs")
   ];
   const targets = [];
   for (const dir of candidates) {
@@ -17848,7 +18005,7 @@ function findCodexLogs() {
       const entries = (0, import_fs3.readdirSync)(dir, { withFileTypes: true });
       for (const e of entries) {
         if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
-          targets.push({ path: (0, import_path3.join)(dir, e.name), source: "codex" });
+          targets.push({ path: (0, import_path5.join)(dir, e.name), source: "codex" });
         }
       }
     } catch {
@@ -17857,25 +18014,25 @@ function findCodexLogs() {
   return targets;
 }
 function findCursorLogs() {
-  const base = (0, import_path3.join)((0, import_os2.homedir)(), "Library", "Application Support", "Cursor", "logs");
+  const base = (0, import_path5.join)((0, import_os2.homedir)(), "Library", "Application Support", "Cursor", "logs");
   if (!(0, import_fs3.existsSync)(base)) return [];
   const targets = [];
   try {
     const entries = (0, import_fs3.readdirSync)(base, { withFileTypes: true });
     for (const e of entries) {
       if (e.isDirectory()) {
-        const sub = (0, import_path3.join)(base, e.name);
+        const sub = (0, import_path5.join)(base, e.name);
         try {
           const subEntries = (0, import_fs3.readdirSync)(sub, { withFileTypes: true });
           for (const se of subEntries) {
             if (se.name.endsWith(".jsonl") || se.name.endsWith(".log")) {
-              targets.push({ path: (0, import_path3.join)(sub, se.name), source: "cursor" });
+              targets.push({ path: (0, import_path5.join)(sub, se.name), source: "cursor" });
             }
           }
         } catch {
         }
       } else if (e.name.endsWith(".jsonl") || e.name.endsWith(".log")) {
-        targets.push({ path: (0, import_path3.join)(base, e.name), source: "cursor" });
+        targets.push({ path: (0, import_path5.join)(base, e.name), source: "cursor" });
       }
     }
   } catch {
@@ -17887,7 +18044,7 @@ function discoverScanTargets() {
 }
 function findOpenCodeDb() {
   const candidates = [
-    (0, import_path3.join)((0, import_os2.homedir)(), ".local", "share", "opencode", "opencode.db")
+    (0, import_path5.join)((0, import_os2.homedir)(), ".local", "share", "opencode", "opencode.db")
   ];
   const targets = [];
   for (const p of candidates) {
@@ -18352,9 +18509,12 @@ function registerToken(program3) {
 
 // src/cli.ts
 var program2 = new Command();
-program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u89C6\u89C9\u6A21\u578B\u6D4B\u8BD5\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.11.1");
+program2.name("deepseek-plugin-cli").description("DeepSeek \u63D2\u4EF6\u7EDF\u4E00\u7BA1\u7406\u5DE5\u5177\uFF1AAPI Key \u7BA1\u7406\u3001\u591A\u6A21\u6001\u6A21\u578B\u914D\u7F6E\u3001\u8BC6\u56FE/\u97F3\u9891/PDF\u3001\u4F59\u989D\u67E5\u8BE2\u3001\u83DC\u5355\u680F\u5E94\u7528\u3001Skill \u5B89\u88C5\u3001Token \u7EDF\u8BA1").version("0.12.0");
 registerAuth(program2);
 registerVision(program2);
+registerMultimodal(program2);
+registerAudio(program2);
+registerPdf(program2);
 registerBalance(program2);
 registerSkill(program2);
 registerCompletion(program2);

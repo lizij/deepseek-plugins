@@ -1,14 +1,14 @@
 ---
 name: deepseek-plugin-skill
 description: |
-  当用户需要识别图片、分析图像内容、查询 DeepSeek API 余额、统计 token 用量或配置视觉模型时使用此 skill。
-  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、余额查询与 token 用量统计能力。
-  通过 scripts/deepseek-plugin-cli 调用视觉模型分析图片，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
-  支持多视觉模型容灾切换。
+  当用户需要识别图片、分析图像内容、转写音频、理解 PDF 文档、查询 DeepSeek API 余额、统计 token 用量或配置多模态模型时使用此 skill。
+  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、语音转写、文档理解、余额查询与 token 用量统计能力。
+  通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
+  支持多多模态模型容灾切换。
 license: MIT
 compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
 metadata:
-  version: "0.11.1"
+  version: "0.12.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -17,13 +17,36 @@ metadata:
 
 ## 子能力
 
-### 1. Vision Analyze Helper（辅助识图）
+### 1. Vision Helper（辅助识图）
 
-为纯文本模型补充图片识别能力，通过调用第三方视觉模型分析图片。
+为纯文本模型补充图片识别能力，通过调用第三方多模态模型分析图片。
 
-详见 [references/vision-analyze-helper.md](references/vision-analyze-helper.md)
+详见 [references/vision-helper.md](references/vision-helper.md)
 
-### 2. 余额查询（Balance）
+### 2. Audio Helper（辅助语音转写）
+
+为纯文本模型补充音频识别能力，通过调用第三方多模态模型转写音频内容（ASR）。
+
+详见 [references/audio-helper.md](references/audio-helper.md)
+
+### 3. PDF Helper（辅助文档理解）
+
+为纯文本模型补充 PDF 文档理解能力，通过调用第三方多模态模型解析 PDF 内容。
+
+详见 [references/pdf-helper.md](references/pdf-helper.md)
+
+### 4. 多模态模型配置（Multimodal Config）
+
+管理多模态模型的 base_url / model / 备选容灾配置，同一套配置同时服务 vision/audio/pdf。
+
+```bash
+scripts/deepseek-plugin-cli multimodal config --base-url <url> --model <name>   # 配置主模型
+scripts/deepseek-plugin-cli multimodal fallback add --base-url <url> --model <name>  # 添加备选模型
+scripts/deepseek-plugin-cli multimodal fallback list    # 列出所有模型
+scripts/deepseek-plugin-cli multimodal fallback remove <index>  # 删除备选模型
+```
+
+### 5. 余额查询（Balance）
 
 查询 DeepSeek API 账户余额。
 
@@ -32,7 +55,7 @@ scripts/deepseek-plugin-cli balance        # 人类可读格式
 scripts/deepseek-plugin-cli balance --json # JSON 格式
 ```
 
-### 3. Token 用量统计（Token Counter）
+### 6. Token 用量统计（Token Counter）
 
 扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），按 30 分钟桶聚合 token 用量，支持按 Agent / 按 Model 拆分今日消耗。数据存储在本地 `~/.deepseek-plugins/`，无需联网。
 
@@ -45,7 +68,7 @@ scripts/deepseek-plugin-cli token report --days 7   # 按日用量报告
 scripts/deepseek-plugin-cli token clear             # 清空所有 token 数据
 ```
 
-### 4. 菜单栏应用（MenuBar）
+### 7. 菜单栏应用（MenuBar）
 
 启动原生 macOS 菜单栏应用，在菜单栏实时显示余额、可用状态和今日 token 用量（按 Agent / 按 Model 拆分），每 10 分钟自动刷新。仅支持 macOS。Swift 源码内嵌于 CLI 单文件，运行时自动编译，独立分发即可用，无需额外文件。
 
@@ -64,17 +87,21 @@ scripts/deepseek-plugin-cli menubar --build # 强制重新编译
 scripts/deepseek-plugin-cli auth set deepseek
 ```
 
-### 视觉模型（识图）
+### 多模态模型（识图/音频/PDF）
+
+图片、音频、PDF 共用同一套多模态模型配置，配置一次即可服务所有模态：
 
 ```bash
 scripts/deepseek-plugin-cli auth set vision
-scripts/deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o
+scripts/deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o
 ```
 
 ### 多模型容灾（可选）
 
+不同模型支持的模态可能不同（如某模型支持图片但不支持音频），容灾链会自动切换到支持当前模态的模型：
+
 ```bash
-scripts/deepseek-plugin-cli vision fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
+scripts/deepseek-plugin-cli multimodal fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
 scripts/deepseek-plugin-cli auth set vision.fallback.0
 ```
 
@@ -85,10 +112,12 @@ scripts/deepseek-plugin-cli auth set <service>      # 设置 API Key
 scripts/deepseek-plugin-cli auth list               # 列出已注册 service
 scripts/deepseek-plugin-cli auth unset <service>    # 删除 API Key
 scripts/deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图
-scripts/deepseek-plugin-cli vision config [--base-url <url>] [--model <name>]  # 配置主视觉模型
-scripts/deepseek-plugin-cli vision fallback add --base-url <url> --model <name>  # 添加备选模型
-scripts/deepseek-plugin-cli vision fallback list    # 列出所有视觉模型
-scripts/deepseek-plugin-cli vision fallback remove <index>  # 删除备选模型
+scripts/deepseek-plugin-cli multimodal config [--base-url <url>] [--model <name>]  # 配置主多模态模型
+scripts/deepseek-plugin-cli multimodal fallback add --base-url <url> --model <name>  # 添加备选模型
+scripts/deepseek-plugin-cli multimodal fallback list    # 列出所有多模态模型
+scripts/deepseek-plugin-cli multimodal fallback remove <index>  # 删除备选模型
+scripts/deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR）
+scripts/deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解
 scripts/deepseek-plugin-cli balance [--json]        # 查询余额
 scripts/deepseek-plugin-cli token scan              # 扫描 agent 日志聚合 token
 scripts/deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）
@@ -96,4 +125,3 @@ scripts/deepseek-plugin-cli token buckets           # 查看桶数据
 scripts/deepseek-plugin-cli token report [--days N] # 按日用量报告
 scripts/deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
 ```
-

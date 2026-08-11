@@ -1,4 +1,4 @@
-# Vision Analyze Helper（辅助识图）
+# Vision Helper（辅助识图）
 
 为纯文本模型提供辅助识图能力，帮助无视觉能力的模型（如 `deepseek-v4-pro`、`deepseek-v4-flash`）识别图片。
 

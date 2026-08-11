@@ -1,0 +1,48 @@
+{
+  "name": "@deepseek-plugins/vision-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multimodal helper CLI + cross-agent Skill for text-only models (image/audio/pdf)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/vision.js",
+  "types": "./dist/vision.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/vision.d.ts",
+      "import": "./dist/vision.js"
+    },
+    "./vision": {
+      "types": "./dist/vision.d.ts",
+      "import": "./dist/vision.js"
+    },
+    "./audio": {
+      "types": "./dist/audio.d.ts",
+      "import": "./dist/audio.js"
+    },
+    "./pdf": {
+      "types": "./dist/pdf.d.ts",
+      "import": "./dist/pdf.js"
+    }
+  },
+  "bin": {
+    "vision-helper": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts src/vision.ts src/image.ts src/audio.ts src/pdf.ts src/normalize.ts --format esm --dts --clean && chmod +x dist/cli.js",
+    "dev": "tsup src/cli.ts src/vision.ts --format esm --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-plugins/shared": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsup": "^8.2.4",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.0"
+  }
+}

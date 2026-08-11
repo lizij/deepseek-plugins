@@ -17,21 +17,21 @@ importers:
       typescript:
         specifier: ^5.5.4
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/cli:
     dependencies:
-      '@deepseek-plugins/menubar':
-        specifier: workspace:*
-        version: link:../menubar
       '@deepseek-plugins/shared':
         specifier: workspace:*
         version: link:../shared
       '@deepseek-plugins/token-counter':
         specifier: workspace:*
         version: link:../token-counter
-      '@deepseek-plugins/vision-analyze-helper':
+      '@deepseek-plugins/vision-helper':
         specifier: workspace:*
-        version: link:../vision-analyze-helper
+        version: link:../vision-helper
       '@inquirer/prompts':
         specifier: ^7.0.0
         version: 7.10.1(@types/node@22.20.1)
@@ -101,7 +101,7 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/vision-analyze-helper:
+  packages/vision-helper:
     dependencies:
       '@deepseek-plugins/shared':
         specifier: workspace:*

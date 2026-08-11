@@ -6,9 +6,9 @@ _deepseek_services() {
   local -a services
   services=(
     'deepseek:DeepSeek 主 API Key'
-    'vision:主视觉模型 API Key'
-    'vision.base_url:主视觉模型 base URL'
-    'vision.model:主视觉模型名称'
+    'vision:主多模态模型 API Key'
+    'vision.base_url:主多模态模型 base URL'
+    'vision.model:主多模态模型名称'
   )
   _describe 'service' services
 }
@@ -36,14 +36,14 @@ _deepseek_auth() {
   esac
 }
 
-_deepseek_vision_fallback() {
+_deepseek_multimodal_fallback() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
   local -a cmds
   cmds=(
-    'add:添加备选视觉模型'
-    'list:列出所有视觉模型'
-    'remove:删除备选视觉模型'
+    'add:添加备选多模态模型'
+    'list:列出所有多模态模型'
+    'remove:删除备选多模态模型'
   )
   _arguments -C \\
     '1:fallback 子命令:->cmd' \\
@@ -63,20 +63,19 @@ _deepseek_vision_fallback() {
   esac
 }
 
-_deepseek_vision() {
+_deepseek_multimodal() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
+  local -a cmds
+  cmds=(
+    'config:配置主多模态模型'
+    'fallback:管理备选多模态模型'
+  )
   _arguments -C \\
-    '(-p --prompt)'{-p,--prompt}'[提问内容]:提示词:' \\
-    '(-d --detail)'{-d,--detail}'[细节级别]:级别:(low high)' \\
-    '1:vision 子命令或图片:->cmd' \\
+    '1:multimodal 子命令:->cmd' \\
     '*::参数:->args'
   case $state in
-    cmd)
-      _alternative \\
-        'files:图片路径:_files' \\
-        'commands:vision 子命令:(config fallback)'
-      ;;
+    cmd) _describe 'multimodal 子命令' cmds ;;
     args)
       case \${words[2]} in
         config)
@@ -84,10 +83,29 @@ _deepseek_vision() {
             '--base-url[API base URL]:URL:' \\
             '--model[模型名称]:模型:'
           ;;
-        fallback) _deepseek_vision_fallback ;;
+        fallback) _deepseek_multimodal_fallback ;;
       esac
       ;;
   esac
+}
+
+_deepseek_vision() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[提问内容]:提示词:' \\
+    '(-d --detail)'{-d,--detail}'[细节级别]:级别:(low high)' \\
+    '1:图片路径:_files'
+}
+
+_deepseek_audio() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[提问内容]:提示词:' \\
+    '1:音频文件:_files'
+}
+
+_deepseek_pdf() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[提问内容]:提示词:' \\
+    '1:PDF 文件:_files -g "*.pdf"'
 }
 
 _deepseek_skill() {
@@ -117,7 +135,10 @@ _deepseek_plugin_cli() {
   local -a subcmds
   subcmds=(
     'auth:管理 API Key'
-    'vision:图片识别与视觉模型配置'
+    'vision:图片识别（辅助识图）'
+    'multimodal:多模态模型配置（config/fallback）'
+    'audio:音频转写（ASR）'
+    'pdf:PDF 文档理解'
     'balance:查询 DeepSeek API 余额'
     'skill:安装与更新 Skill'
     'menubar:启动 macOS 菜单栏应用'
@@ -134,6 +155,9 @@ _deepseek_plugin_cli() {
       case \${words[2]} in
         auth) _deepseek_auth ;;
         vision) _deepseek_vision ;;
+        multimodal) _deepseek_multimodal ;;
+        audio) _deepseek_audio ;;
+        pdf) _deepseek_pdf ;;
         balance) _arguments '--json[输出 JSON 格式]' ;;
         skill) _deepseek_skill ;;
         token) _deepseek_token ;;
@@ -149,9 +173,9 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 const BASH_COMPLETION = `# 由 deepseek-plugin-cli completion bash 生成
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision balance skill menubar token"
+  local subcommands="auth vision multimodal audio pdf balance skill menubar token"
   local auth_cmds="set get unset list"
-  local vision_cmds="config fallback"
+  local multimodal_cmds="config fallback"
   local fallback_cmds="add list remove"
   local skill_cmds="install update"
   local token_cmds="scan today buckets report clear"
@@ -162,7 +186,10 @@ _deepseek_plugin_cli_completion() {
     2)
       case "\${COMP_WORDS[1]}" in
         auth) COMPREPLY=( \$(compgen -W "\$auth_cmds" -- "\$cur") ) ;;
-        vision) COMPREPLY=( \$(compgen -W "\$vision_cmds -p -d" -- "\$cur") ) ;;
+        vision) COMPREPLY=( \$(compgen -W "-p --prompt -d --detail" -- "\$cur") ) ;;
+        multimodal) COMPREPLY=( \$(compgen -W "\$multimodal_cmds" -- "\$cur") ) ;;
+        audio) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
+        pdf) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
         skill) COMPREPLY=( \$(compgen -W "\$skill_cmds" -- "\$cur") ) ;;
         token) COMPREPLY=( \$(compgen -W "\$token_cmds" -- "\$cur") ) ;;
       esac
@@ -174,7 +201,7 @@ _deepseek_plugin_cli_completion() {
             set|get|unset) COMPREPLY=( \$(compgen -W "\$services" -- "\$cur") ) ;;
           esac
           ;;
-        vision)
+        multimodal)
           case "\${COMP_WORDS[2]}" in
             config) COMPREPLY=( \$(compgen -W "--base-url --model" -- "\$cur") ) ;;
             fallback) COMPREPLY=( \$(compgen -W "\$fallback_cmds" -- "\$cur") ) ;;
@@ -184,7 +211,7 @@ _deepseek_plugin_cli_completion() {
       ;;
     4)
       case "\${COMP_WORDS[1]} \${COMP_WORDS[2]}" in
-        "vision fallback")
+        "multimodal fallback")
           case "\${COMP_WORDS[3]}" in
             add) COMPREPLY=( \$(compgen -W "--base-url --model" -- "\$cur") ) ;;
           esac

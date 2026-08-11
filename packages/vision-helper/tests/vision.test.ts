@@ -75,7 +75,7 @@ describe('vision', () => {
 
       await expect(
         analyzeImage(mockConfig, { image: 'https://example.com/photo.png' })
-      ).rejects.toThrow('视觉模型请求失败 (HTTP 401)');
+      ).rejects.toThrow('多模态模型请求失败 (HTTP 401)');
     });
 
     it('响应无内容时抛出异常', async () => {
@@ -86,7 +86,7 @@ describe('vision', () => {
 
       await expect(
         analyzeImage(mockConfig, { image: 'https://example.com/photo.png' })
-      ).rejects.toThrow('视觉模型未返回内容');
+      ).rejects.toThrow('多模态模型未返回内容');
     });
 
     it('baseUrl 尾部斜杠被正确去除', async () => {
@@ -107,7 +107,7 @@ describe('vision', () => {
     it('空配置数组时抛出异常', async () => {
       await expect(
         analyzeImageWithFallback([], { image: 'https://example.com/photo.png' })
-      ).rejects.toThrow('未配置任何视觉模型');
+      ).rejects.toThrow('未配置任何多模态模型');
     });
 
     it('主模型成功时直接返回，不尝试备选', async () => {
@@ -155,7 +155,7 @@ describe('vision', () => {
           [mockConfig, mockConfig2],
           { image: 'https://example.com/photo.png' },
         ),
-      ).rejects.toThrow('所有视觉模型均调用失败');
+      ).rejects.toThrow('所有多模态模型均调用失败');
       // 错误信息应包含各模型名称
       try {
         await analyzeImageWithFallback([mockConfig, mockConfig2], { image: 'https://example.com/photo.png' });

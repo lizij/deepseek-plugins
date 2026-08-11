@@ -67,9 +67,9 @@ export function registerSkill(program: Command) {
       console.log('  # DeepSeek API Key');
       console.log('  deepseek-plugin-cli auth set deepseek');
       console.log('');
-      console.log('  # 视觉模型');
+      console.log('  # 多模态模型');
       console.log('  deepseek-plugin-cli auth set vision');
-      console.log('  deepseek-plugin-cli vision config --base-url https://api.openai.com/v1 --model gpt-4o');
+      console.log('  deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o');
     });
 
   skill
