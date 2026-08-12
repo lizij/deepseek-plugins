@@ -6,7 +6,7 @@ description: |
   通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
   支持多多模态模型容灾切换。
 license: MIT
-compatibility: Requires Node.js 20+, designed for Claude Code, TRAE, and other AI agents
+compatibility: Requires Node.js 20+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
   version: "0.16.0"
 ---

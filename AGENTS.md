@@ -158,6 +158,17 @@ deepseek-plugin-cli service stop      # 终止后台服务
 
 ### 接入 Agent
 
+#### 支持的 Agent 平台
+
+| 平台 | 多模态调用 | Token 统计 | 接入方式 |
+|------|-----------|-----------|---------|
+| Claude Code | ✅ | ✅ | AGENTS.md 自动加载，无需额外配置 |
+| TRAE | ✅ | ✅ | `skill install --agent trae` 安装 Skill |
+| Codex | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 `~/.codex/logs/`） |
+| Cursor | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 Cursor 日志目录） |
+| opencode | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 `opencode.db`） |
+| 其他 Agent | ✅ | — | 任何支持执行 shell 命令的 agent，确保 CLI 在 PATH 中即可 |
+
 #### TRAE
 
 确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 完成。Skill 已配置在 `.trae/skills/deepseek-plugin-skill/SKILL.md`。
@@ -165,6 +176,14 @@ deepseek-plugin-cli service stop      # 终止后台服务
 #### Claude Code
 
 确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 完成。
+
+#### Codex / Cursor / opencode
+
+这些平台无需安装 Skill，只要 `deepseek-plugin-cli` 在 PATH 中，即可在对话中通过 shell 命令调用多模态能力。Token 统计会自动扫描对应平台的日志目录：
+
+- **Codex**：`~/.codex/logs/` 或 `~/.config/codex/logs/`
+- **Cursor**：`~/Library/Application Support/Cursor/logs/`
+- **opencode**：`~/.local/share/opencode/opencode.db`
 
 #### 其他 Agent
 
