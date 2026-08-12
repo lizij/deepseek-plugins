@@ -13,6 +13,8 @@ import { registerMenuBar } from './commands/menubar.js';
 import { registerToken } from './commands/token.js';
 import { registerGui } from './commands/gui.js';
 import { registerService } from './commands/service.js';
+import { registerDoctor } from './commands/doctor.js';
+import { registerConfig } from './commands/config.js';
 
 // Node.js 版本检查（双重保险：banner 的 sh 层已检查，此处覆盖直接用 node 执行的情况）
 const _nodeMajor = parseInt(process.versions.node.split('.')[0] ?? '0', 10);
@@ -48,6 +50,8 @@ if (process.argv[2] === '__daemon') {
   registerToken(program);
   registerGui(program);
   registerService(program);
+  registerDoctor(program);
+  registerConfig(program);
 
   program.parseAsync().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err));
