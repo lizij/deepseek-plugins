@@ -137,4 +137,8 @@ scripts/deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应�
 scripts/deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打开图形化配置界面（管理 API Key / 多模态模型 / Token 用量，后台常驻）
 scripts/deepseek-plugin-cli service status    # 查看后台服务运行状态
 scripts/deepseek-plugin-cli service stop      # 终止后台服务
+scripts/deepseek-plugin-cli doctor            # 环境自检（Node 版本 / API Key / 模型配置 / 网络连通性）
+scripts/deepseek-plugin-cli config init       # 交互式配置向导（引导设置 Key 和多模态模型）
+scripts/deepseek-plugin-cli config export <file>  # 导出所有配置为明文 JSON（跨机器迁移用）
+scripts/deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 ```
