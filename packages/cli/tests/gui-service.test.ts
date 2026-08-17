@@ -17,13 +17,12 @@ vi.mock('@deepseek-plugins/shared/balance', () => ({
 }));
 
 vi.mock('@deepseek-plugins/shared/multimodal-config', () => ({
-  loadAllConfigs: vi.fn(),
-  setPrimaryConfig: vi.fn(),
-  addFallbackConfig: vi.fn(),
-  removeFallbackConfig: vi.fn(),
-  deletePrimaryConfig: vi.fn(),
-  updateFallbackConfig: vi.fn(),
-  moveFallbackConfig: vi.fn(),
+  loadAllModels: vi.fn(),
+  setModel: vi.fn(),
+  addModel: vi.fn(),
+  removeModel: vi.fn(),
+  updateModel: vi.fn(),
+  moveModel: vi.fn(),
 }));
 
 vi.mock('@deepseek-plugins/token-counter', () => ({
@@ -35,7 +34,7 @@ vi.mock('@deepseek-plugins/token-counter', () => ({
 
 import { getAllKeys, getKey, setKey } from '@deepseek-plugins/shared';
 import { fetchBalance } from '@deepseek-plugins/shared/balance';
-import { loadAllConfigs, addFallbackConfig, setPrimaryConfig, updateFallbackConfig, removeFallbackConfig, deletePrimaryConfig, moveFallbackConfig } from '@deepseek-plugins/shared/multimodal-config';
+import { loadAllModels, addModel, setModel, updateModel, removeModel, moveModel } from '@deepseek-plugins/shared/multimodal-config';
 import { scanAndAggregate, getSummary, getBuckets, generateDailyReport } from '@deepseek-plugins/token-counter';
 import { toModelEntries } from '../src/gui/model-adapter.js';
 import { isProcessAlive } from '../src/gui/singleton.js';
@@ -48,30 +47,28 @@ describe('gui/model-adapter', () => {
       expect(toModelEntries([])).toEqual([]);
     });
 
-    it('第一个元素标记为 primary，index 为 -1', () => {
+    it('元素 index 为数组下标', () => {
       const configs = [
         { baseUrl: 'https://api.primary.com/v1', model: 'primary-model', apiKey: 'sk-primary' },
       ];
       const entries = toModelEntries(configs);
       expect(entries).toHaveLength(1);
-      expect(entries[0]!.role).toBe('primary');
-      expect(entries[0]!.index).toBe(-1);
+      expect(entries[0]!.index).toBe(0);
       expect(entries[0]!.baseUrl).toBe('https://api.primary.com/v1');
       expect(entries[0]!.model).toBe('primary-model');
       expect(entries[0]!.apiKey).toBe('sk-primary');
     });
 
-    it('后续元素标记为 fallback，index 从 0 开始', () => {
+    it('多个元素 index 从 0 递增', () => {
       const configs = [
         { baseUrl: 'https://p.com/v1', model: 'p', apiKey: 'sk-p' },
         { baseUrl: 'https://f0.com/v1', model: 'f0', apiKey: 'sk-f0' },
         { baseUrl: 'https://f1.com/v1', model: 'f1', apiKey: 'sk-f1' },
       ];
       const entries = toModelEntries(configs);
-      expect(entries[1]!.role).toBe('fallback');
-      expect(entries[1]!.index).toBe(0);
-      expect(entries[2]!.role).toBe('fallback');
-      expect(entries[2]!.index).toBe(1);
+      expect(entries[0]!.index).toBe(0);
+      expect(entries[1]!.index).toBe(1);
+      expect(entries[2]!.index).toBe(2);
     });
   });
 });
@@ -177,14 +174,14 @@ describe('gui/server (HTTP routes)', () => {
 
   it('GET /api/config 返回配置', async () => {
     vi.mocked(getAllKeys).mockResolvedValue({ deepseek: 'sk-test' });
-    vi.mocked(loadAllConfigs).mockResolvedValue([
+    vi.mocked(loadAllModels).mockResolvedValue([
       { baseUrl: 'https://p.com/v1', model: 'gpt-4o', apiKey: 'sk-p' },
     ]);
     const { status, body } = await request('/api/config');
     expect(status).toBe(200);
     expect(body.deepseekKeySet).toBe(true);
     expect(body.models).toHaveLength(1);
-    expect(body.models[0].role).toBe('primary');
+    expect(body.models[0].index).toBe(0);
   });
 
   it('GET /api/deepseek-key 返回 key', async () => {
@@ -213,27 +210,25 @@ describe('gui/server (HTTP routes)', () => {
     expect(body.error).toContain('apiKey 不能为空');
   });
 
-  it('POST /api/models 新增备选模型', async () => {
-    vi.mocked(addFallbackConfig).mockResolvedValue(0);
-    vi.mocked(setKey).mockResolvedValue(undefined);
+  it('POST /api/models 新增模型', async () => {
+    vi.mocked(addModel).mockResolvedValue(0);
     const { status, body } = await request('/api/models', {
       method: 'POST',
-      body: JSON.stringify({ role: 'fallback', baseUrl: 'https://f.com/v1', model: 'fb-model', apiKey: 'sk-fb' }),
+      body: JSON.stringify({ baseUrl: 'https://f.com/v1', model: 'fb-model', apiKey: 'sk-fb' }),
     });
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.index).toBe(0);
-    expect(addFallbackConfig).toHaveBeenCalledWith('https://f.com/v1', 'fb-model');
-    expect(setKey).toHaveBeenCalledWith('vision.fallback.0', 'sk-fb');
+    expect(addModel).toHaveBeenCalledWith('https://f.com/v1', 'fb-model', 'sk-fb');
   });
 
-  it('POST /api/models 非 fallback 角色报错', async () => {
+  it('POST /api/models 缺少必填字段报错', async () => {
     const { status, body } = await request('/api/models', {
       method: 'POST',
-      body: JSON.stringify({ role: 'primary' }),
+      body: JSON.stringify({ baseUrl: 'https://f.com/v1' }),
     });
     expect(status).toBe(400);
-    expect(body.error).toContain('仅支持添加备选模型');
+    expect(body.error).toContain('base_url / model / apiKey 均为必填');
   });
 
   it('GET /api/token/summary 返回汇总', async () => {
@@ -285,48 +280,48 @@ describe('gui/server (HTTP routes)', () => {
     expect(status).toBe(404);
   });
 
-  it('PUT /api/models/0 更新主模型', async () => {
-    vi.mocked(loadAllConfigs).mockResolvedValue([
+  it('PUT /api/models/0 更新模型', async () => {
+    vi.mocked(loadAllModels).mockResolvedValue([
       { baseUrl: 'https://p.com/v1', model: 'gpt-4o', apiKey: 'sk-p' },
     ]);
-    vi.mocked(setPrimaryConfig).mockResolvedValue(undefined);
+    vi.mocked(updateModel).mockResolvedValue(undefined);
     const { status } = await request('/api/models/0', {
       method: 'PUT',
       body: JSON.stringify({ model: 'gpt-4o-mini' }),
     });
     expect(status).toBe(200);
-    expect(setPrimaryConfig).toHaveBeenCalledWith({ baseUrl: undefined, model: 'gpt-4o-mini' });
+    expect(updateModel).toHaveBeenCalledWith(0, { model: 'gpt-4o-mini' });
   });
 
-  it('DELETE /api/models/0 删除主模型', async () => {
-    vi.mocked(loadAllConfigs).mockResolvedValue([
+  it('DELETE /api/models/0 删除模型', async () => {
+    vi.mocked(loadAllModels).mockResolvedValue([
       { baseUrl: 'https://p.com/v1', model: 'gpt-4o', apiKey: 'sk-p' },
     ]);
-    vi.mocked(deletePrimaryConfig).mockResolvedValue(undefined);
+    vi.mocked(removeModel).mockResolvedValue(true);
     const { status } = await request('/api/models/0', { method: 'DELETE' });
     expect(status).toBe(200);
-    expect(deletePrimaryConfig).toHaveBeenCalled();
+    expect(removeModel).toHaveBeenCalledWith(0);
   });
 
-  it('DELETE /api/models/1 删除备选模型', async () => {
-    vi.mocked(loadAllConfigs).mockResolvedValue([
+  it('DELETE /api/models/1 删除模型', async () => {
+    vi.mocked(loadAllModels).mockResolvedValue([
       { baseUrl: 'https://p.com/v1', model: 'gpt-4o', apiKey: 'sk-p' },
       { baseUrl: 'https://f.com/v1', model: 'fb', apiKey: 'sk-f' },
     ]);
-    vi.mocked(removeFallbackConfig).mockResolvedValue(true);
+    vi.mocked(removeModel).mockResolvedValue(true);
     const { status } = await request('/api/models/1', { method: 'DELETE' });
     expect(status).toBe(200);
-    expect(removeFallbackConfig).toHaveBeenCalledWith(0);
+    expect(removeModel).toHaveBeenCalledWith(1);
   });
 
-  it('POST /api/models/1/move 移动备选模型', async () => {
-    vi.mocked(moveFallbackConfig).mockResolvedValue(true);
+  it('POST /api/models/1/move 移动模型', async () => {
+    vi.mocked(moveModel).mockResolvedValue(true);
     const { status } = await request('/api/models/1/move', {
       method: 'POST',
       body: JSON.stringify({ dir: -1 }),
     });
     expect(status).toBe(200);
-    expect(moveFallbackConfig).toHaveBeenCalledWith(0, -1);
+    expect(moveModel).toHaveBeenCalledWith(1, -1);
   });
 
   it('POST /api/models/1/move 无效 dir 报错', async () => {

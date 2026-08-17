@@ -4,8 +4,7 @@ import type { ModelEntry } from './types.js';
 /** 将 shared 的 MultimodalConfig[] 转为 GUI 所需的 ModelEntry[]。 */
 export function toModelEntries(configs: MultimodalConfig[]): ModelEntry[] {
   return configs.map((cfg, i) => ({
-    role: i === 0 ? 'primary' : 'fallback',
-    index: i === 0 ? -1 : i - 1,
+    index: i,
     baseUrl: cfg.baseUrl,
     model: cfg.model,
     apiKey: cfg.apiKey,

@@ -164,11 +164,11 @@
 
   <!-- 多模态模型 -->
   <section class="card">
-    <h2>多模态模型 <span class="badge primary">主模型</span> + <span class="badge fallback">备选容灾</span></h2>
+    <h2>多模态模型 <span class="badge primary">vision / audio / pdf</span></h2>
     <div id="model-list"></div>
     <div class="add-bar">
-      <div class="hint">调用顺序：主模型 → 备选 #0 → 备选 #1 …，任一成功即返回。</div>
-      <button class="primary" onclick="openAddFallback()">+ 添加备选模型</button>
+      <div class="hint">按数组顺序依次尝试，任一成功即返回。</div>
+      <button class="primary" onclick="openAddModel()">+ 添加模型</button>
     </div>
   </section>
 
@@ -269,7 +269,7 @@ function render() {
   const list = $('model-list');
   list.innerHTML = '';
   if (state.models.length === 0) {
-    list.innerHTML = '<div class="empty">尚未配置任何多模态模型。点击下方按钮添加主模型或备选模型。</div>';
+    list.innerHTML = '<div class="empty">尚未配置任何多模态模型。点击下方按钮添加模型。</div>';
     return;
   }
   state.models.forEach((m, i) => list.appendChild(renderModel(m, i)));
@@ -278,14 +278,11 @@ function render() {
 function renderModel(m, i) {
   const div = document.createElement('div');
   div.className = 'model-item';
-  const isPrimary = m.role === 'primary';
-  const badge = isPrimary
-    ? '<span class="badge primary">主模型</span>'
-    : '<span class="badge fallback">备选 #' + (i - 1) + '</span>';
+  const badge = '<span class="badge primary">#' + i + '</span>';
 
-  const upBtn = (!isPrimary && i > 1)
+  const upBtn = i > 0
     ? '<button class="ghost" title="上移（提升优先级）" onclick="move(' + i + ',-1)">↑</button>' : '';
-  const downBtn = (!isPrimary && i < state.models.length - 1)
+  const downBtn = i < state.models.length - 1
     ? '<button class="ghost" title="下移（降低优先级）" onclick="move(' + i + ',1)">↓</button>' : '';
 
   div.innerHTML =
@@ -297,10 +294,10 @@ function renderModel(m, i) {
     '</div>' +
     '<div class="row">' +
       '<div class="field"><label>Base URL</label>' +
-        '<input type="text" data-i="' + i + '" data-k="baseUrl" value="' + esc(m.baseUrl) + '" placeholder="https://api.openai.com/v1" />' +
+        '<input type="text" data-i="' + i + '" data-k="baseUrl" value="' + esc(m.baseUrl) + '" placeholder="https://open.bigmodel.cn/api/paas/v4" />' +
       '</div>' +
       '<div class="field"><label>Model</label>' +
-        '<input type="text" data-i="' + i + '" data-k="model" value="' + esc(m.model) + '" placeholder="gpt-4o" />' +
+        '<input type="text" data-i="' + i + '" data-k="model" value="' + esc(m.model) + '" placeholder="glm-4.6v" />' +
       '</div>' +
       '<div class="field"><label>API Key<span class="pw-toggle" onclick="togglePw(this)">显示</span></label>' +
         '<input type="password" data-i="' + i + '" data-k="apiKey" value="' + esc(m.apiKey) + '" placeholder="' + (m.apiKey ? '已设置，留空不修改' : 'sk-...') + '" autocomplete="off" />' +
@@ -368,8 +365,7 @@ async function saveModel(i) {
 
 async function removeModel(i) {
   const m = state.models[i];
-  const label = m.role === 'primary' ? '主模型' : ('备选 #' + (i - 1));
-  if (!confirm('确定删除 ' + label + ' (' + (m.model || '未命名') + ') 吗？')) return;
+  if (!confirm('确定删除模型 #' + i + ' (' + (m.model || '未命名') + ') 吗？')) return;
   try {
     await api('DELETE', '/api/models/' + i);
     toast('已删除', 'ok');
@@ -388,26 +384,26 @@ async function move(i, dir) {
   }
 }
 
-function openAddFallback() {
+function openAddModel() {
   const list = $('model-list');
   const i = state.models.length;
   const div = document.createElement('div');
   div.className = 'model-item';
   div.innerHTML =
-    '<div class="head"><div class="title"><span class="badge fallback">新备选</span></div>' +
+    '<div class="head"><div class="title"><span class="badge primary">#' + i + '</span></div>' +
       '<div class="actions"><button class="ghost" onclick="this.closest(\'.model-item\').remove()">取消</button></div>' +
     '</div>' +
     '<div class="row">' +
-      '<div class="field"><label>Base URL</label><input type="text" data-new="baseUrl" placeholder="https://api.openai.com/v1" /></div>' +
-      '<div class="field"><label>Model</label><input type="text" data-new="model" placeholder="gpt-4o" /></div>' +
+      '<div class="field"><label>Base URL</label><input type="text" data-new="baseUrl" placeholder="https://open.bigmodel.cn/api/paas/v4" /></div>' +
+      '<div class="field"><label>Model</label><input type="text" data-new="model" placeholder="glm-4.6v" /></div>' +
       '<div class="field"><label>API Key</label><input type="password" data-new="apiKey" placeholder="sk-..." autocomplete="off" /></div>' +
-      '<div><button class="primary" onclick="addFallback(this)">添加</button></div>' +
+      '<div><button class="primary" onclick="addModel(this)">添加</button></div>' +
     '</div>';
   list.appendChild(div);
   div.querySelector('input[data-new="baseUrl"]').focus();
 }
 
-async function addFallback(btn) {
+async function addModel(btn) {
   const item = btn.closest('.model-item');
   const baseUrl = item.querySelector('input[data-new="baseUrl"]').value.trim();
   const model = item.querySelector('input[data-new="model"]').value.trim();
@@ -417,7 +413,7 @@ async function addFallback(btn) {
     return;
   }
   try {
-    await api('POST', '/api/models', { role: 'fallback', baseUrl, model, apiKey });
+    await api('POST', '/api/models', { baseUrl, model, apiKey });
     toast('已添加', 'ok');
     refresh();
   } catch (e) {

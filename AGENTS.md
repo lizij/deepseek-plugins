@@ -89,34 +89,35 @@ source <(deepseek-plugin-cli completion bash)
 deepseek-plugin-cli auth set deepseek
 ```
 
-#### 视觉模型 API Key 与配置（识图用）
+#### 视觉模型配置（识图用）
 
 ```bash
-# 设置 API Key（交互式输入，加密存储）
-deepseek-plugin-cli auth set vision
-
-# 配置 base_url 与 model
-deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o
+# 配置第一个模型（索引 0，base_url / model / API Key 一步完成，API Key 交互式隐藏输入）
+deepseek-plugin-cli multimodal set --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.6v --api-key
 ```
 
 #### 多模型容灾（可选）
 
-支持配置多个备选视觉模型，主模型调用失败时自动切换：
+支持配置多个视觉模型，按数组顺序依次尝试，任一成功即返回：
 
 ```bash
-# 添加备选模型
-deepseek-plugin-cli multimodal fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
-# 设置备选模型的 API Key（注意索引从 0 开始）
-deepseek-plugin-cli auth set vision.fallback.0
+# 添加模型到末尾（含 API Key）
+deepseek-plugin-cli multimodal add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet --api-key
 
 # 查看所有已配置模型
-deepseek-plugin-cli multimodal fallback list
+deepseek-plugin-cli multimodal list
 
-# 删除备选模型
-deepseek-plugin-cli multimodal fallback remove 0
+# 更新指定索引模型（base_url / model / API Key）
+deepseek-plugin-cli multimodal update 0 --model claude-3-5-haiku
+
+# 调整模型优先级
+deepseek-plugin-cli multimodal move 0 up
+
+# 删除指定索引模型
+deepseek-plugin-cli multimodal remove 0
 ```
 
-调用时按优先级顺序尝试：主模型 → fallback.0 → fallback.1 → …，任一成功即返回。
+调用时按数组顺序依次尝试：#0 → #1 → #2 → …，任一成功即返回。
 
 ### 验证
 
@@ -135,10 +136,12 @@ deepseek-plugin-cli auth set <service>      # 设置 API Key（交互式，隐�
 deepseek-plugin-cli auth list               # 列出已注册的 service
 deepseek-plugin-cli auth unset <service>    # 删除 API Key
 deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图（自动容灾切换）
-deepseek-plugin-cli multimodal config [--base-url <url>] [--model <name>]  # 配置主多模态模型
-deepseek-plugin-cli multimodal fallback add --base-url <url> --model <name>  # 添加备选多模态模型
-deepseek-plugin-cli multimodal fallback list    # 列出所有多模态模型
-deepseek-plugin-cli multimodal fallback remove <index>  # 删除备选模型
+deepseek-plugin-cli multimodal list                              # 列出所有多模态模型（按调用优先级排列）
+deepseek-plugin-cli multimodal set [--base-url <url>] [--model <name>] [--api-key]  # 设置第一个模型（索引 0）
+deepseek-plugin-cli multimodal add --base-url <url> --model <name> [--api-key]      # 添加模型到末尾
+deepseek-plugin-cli multimodal update <index> [--base-url <url>] [--model <name>] [--api-key]  # 更新指定索引模型
+deepseek-plugin-cli multimodal remove <index>                    # 删除指定索引模型
+deepseek-plugin-cli multimodal move <index> <up|down>            # 调整模型优先级
 deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR，自动容灾切换）
 deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解（自动容灾切换）
 deepseek-plugin-cli balance [--json]        # 查询余额
@@ -194,8 +197,7 @@ deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 只要 agent 支持执行 shell 命令，即可通过 `deepseek-plugin-cli vision` 调用识图能力。只需确保：
 
 1. `deepseek-plugin-cli` 在 PATH 中
-2. 多模态模型配置已通过 `deepseek-plugin-cli multimodal config` 完成
-3. API Key 已通过 `deepseek-plugin-cli auth set vision` 完成
+2. 多模态模型配置已通过 `deepseek-plugin-cli multimodal set` 完成（含 API Key）
 
 ## 部署说明
 
@@ -276,9 +278,4 @@ deepseek-plugin-cli auth list              # 列出已注册 service 名（不�
 所有包读取 Key 必须通过 `@deepseek-plugins/shared` 的 `getKey(service)`，禁止自行读取环境变量或文件。已知 service：
 
 - `deepseek` — DeepSeek 主 API Key
-- `vision` — 主视觉模型 API Key
-- `vision.base_url` — 主视觉模型 API base URL
-- `vision.model` — 主视觉模型名称
-- `vision.fallback.<N>` — 备选视觉模型 N 的 API Key
-- `vision.fallback.<N>.base_url` — 备选视觉模型 N 的 base URL
-- `vision.fallback.<N>.model` — 备选视觉模型 N 的名称
+- `multimodal.models` — 多模态模型配置数组（JSON 字符串，每个元素含 base_url / model / api_key），按数组顺序依次尝试调用

@@ -1,8 +1,10 @@
 import { Command } from 'commander';
 import { input, confirm, password } from '@inquirer/prompts';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { getAllKeys, updateCredentials } from '@deepseek-plugins/shared';
-import { setPrimaryConfig, addFallbackConfig } from '@deepseek-plugins/shared/multimodal-config';
+import { getAllKeys, updateCredentials, setKey } from '@deepseek-plugins/shared';
+import { setModel, addModel } from '@deepseek-plugins/shared/multimodal-config';
+
+const STORAGE_KEY = 'multimodal.models';
 
 /** 配置管理命令：init（交互式向导）、export（导出）、import（导入）。 */
 export function registerConfig(program: Command) {
@@ -40,32 +42,29 @@ export function registerConfig(program: Command) {
       });
       if (wantVision) {
         const visionKey = await password({ message: '输入多模态模型 API Key:', mask: true });
-        await updateCredentials((creds) => { creds['vision'] = visionKey; });
-
         const baseUrl = await input({
           message: '输入多模态模型 API base URL（OpenAI 兼容）:',
-          default: 'https://api.openai.com/v1',
+          default: 'https://open.bigmodel.cn/api/paas/v4',
         });
         const model = await input({
           message: '输入多模态模型名称:',
-          default: 'gpt-4o',
+          default: 'glm-4.6v',
         });
-        await setPrimaryConfig({ baseUrl, model });
-        console.log(`✓ 主模型已配置: ${model} @ ${baseUrl}`);
+        await setModel(0, { baseUrl, model, apiKey: visionKey });
+        console.log(`✓ 模型 #0 已配置: ${model} @ ${baseUrl}`);
 
-        // 3. 备选模型
+        // 3. 更多模型
         let addMore = await confirm({
-          message: '是否添加备选多模态模型？（用于容灾切换）',
+          message: '是否添加更多多模态模型？（按顺序依次尝试）',
           default: false,
         });
         while (addMore) {
-          const fbKey = await password({ message: '输入备选模型 API Key:', mask: true });
-          const fbBaseUrl = await input({ message: '输入备选模型 base URL:' });
-          const fbModel = await input({ message: '输入备选模型名称:' });
-          const idx = await addFallbackConfig(fbBaseUrl, fbModel);
-          await updateCredentials((creds) => { creds[`vision.fallback.${idx}`] = fbKey; });
-          console.log(`✓ 备选模型 #${idx} 已添加: ${fbModel} @ ${fbBaseUrl}`);
-          addMore = await confirm({ message: '继续添加备选模型？', default: false });
+          const fbKey = await password({ message: '输入模型 API Key:', mask: true });
+          const fbBaseUrl = await input({ message: '输入模型 base URL:' });
+          const fbModel = await input({ message: '输入模型名称:' });
+          const idx = await addModel(fbBaseUrl, fbModel, fbKey);
+          console.log(`✓ 模型 #${idx} 已添加: ${fbModel} @ ${fbBaseUrl}`);
+          addMore = await confirm({ message: '继续添加模型？', default: false });
         }
       }
       console.log('');
@@ -95,7 +94,17 @@ export function registerConfig(program: Command) {
         process.exit(1);
       }
 
-      const data = JSON.stringify(allKeys, null, 2);
+      const exportData: Record<string, unknown> = { ...allKeys };
+      const rawModels = allKeys[STORAGE_KEY];
+      if (rawModels) {
+        try {
+          exportData[STORAGE_KEY] = JSON.parse(rawModels);
+        } catch {
+          exportData[STORAGE_KEY] = rawModels;
+        }
+      }
+
+      const data = JSON.stringify(exportData, null, 2);
       writeFileSync(file, data, { mode: 0o600 });
       console.log(`✓ 已导出 ${Object.keys(allKeys).length} 项配置到 ${file}`);
       console.log('⚠ 该文件包含明文 API Key，请勿提交到代码仓库或分享给他人');
@@ -134,11 +143,97 @@ export function registerConfig(program: Command) {
         return;
       }
 
-      await updateCredentials((creds) => {
-        for (const [k, v] of Object.entries(data)) {
-          if (typeof v === 'string') creds[k] = v;
+      // 分离多模态模型配置与其他键
+      const multimodalKeys: Record<string, string> = {};
+      const otherKeys: Record<string, string> = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (k === STORAGE_KEY) {
+          multimodalKeys[k] = typeof v === 'string' ? v : JSON.stringify(v);
+          continue;
         }
-      });
+        if (typeof v !== 'string') continue;
+        if (k === 'vision' || k.startsWith('vision.')) {
+          multimodalKeys[k] = v;
+        } else {
+          otherKeys[k] = v;
+        }
+      }
+
+      // 非多模态键直接写入
+      if (Object.keys(otherKeys).length > 0) {
+        await updateCredentials((creds) => {
+          for (const [k, v] of Object.entries(otherKeys)) creds[k] = v;
+        });
+      }
+
+      // 多模态模型配置：支持新格式（multimodal.models）和旧格式（vision.* 扁平键）
+      if (Object.keys(multimodalKeys).length > 0) {
+        await importMultimodalConfig(multimodalKeys);
+      }
+
       console.log(`✓ 已导入 ${count} 项配置`);
     });
+}
+
+/**
+ * 导入多模态模型配置。
+ * 支持两种格式：
+ * 1. 新格式：{ "multimodal.models": "[{...}]" } 直接写入
+ * 2. 旧格式：vision / vision.base_url / vision.model / vision.fallback.N.* 转换为新格式
+ */
+async function importMultimodalConfig(keys: Record<string, string>): Promise<void> {
+  // 新格式：直接使用 multimodal.models
+  if (keys[STORAGE_KEY]) {
+    await updateCredentials((creds) => {
+      for (const k of Object.keys(creds)) {
+        if (k === 'vision' || k.startsWith('vision.')) delete creds[k];
+      }
+      creds[STORAGE_KEY] = keys[STORAGE_KEY]!;
+    });
+    return;
+  }
+
+  // 旧格式：vision.* 扁平键 → 转换为 multimodal.models 数组
+  const models: Array<{ base_url: string; model: string; api_key: string }> = [];
+
+  const primaryApiKey = keys['vision'];
+  const primaryBaseUrl = keys['vision.base_url'];
+  const primaryModel = keys['vision.model'];
+  if (primaryBaseUrl || primaryModel || primaryApiKey) {
+    models.push({
+      base_url: primaryBaseUrl ?? '',
+      model: primaryModel ?? '',
+      api_key: primaryApiKey ?? '',
+    });
+  }
+
+  const fallbackIndices = new Set<number>();
+  for (const k of Object.keys(keys)) {
+    const m = k.match(/^vision\.fallback\.(\d+)(?:\.(base_url|model))?$/);
+    if (m) fallbackIndices.add(parseInt(m[1]!, 10));
+  }
+  const sortedIndices = [...fallbackIndices].sort((a, b) => a - b);
+
+  for (const origIdx of sortedIndices) {
+    const baseUrl = keys[`vision.fallback.${origIdx}.base_url`];
+    const model = keys[`vision.fallback.${origIdx}.model`];
+    const apiKey = keys[`vision.fallback.${origIdx}`];
+    if (!baseUrl && !model && !apiKey) continue;
+    models.push({
+      base_url: baseUrl ?? '',
+      model: model ?? '',
+      api_key: apiKey ?? '',
+    });
+  }
+
+  await updateCredentials((creds) => {
+    for (const k of Object.keys(creds)) {
+      if (k === 'vision' || k.startsWith('vision.')) delete creds[k];
+    }
+    if (models.length > 0) {
+      creds[STORAGE_KEY] = JSON.stringify(models);
+    } else {
+      delete creds[STORAGE_KEY];
+    }
+  });
 }

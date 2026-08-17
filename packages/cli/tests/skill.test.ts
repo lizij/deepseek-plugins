@@ -27,7 +27,7 @@ describe('skill', () => {
     const out = run('skill install');
     expect(out).toContain('安装完成');
     expect(out).toContain('deepseek-plugin-cli auth set deepseek');
-    expect(out).toContain('deepseek-plugin-cli auth set vision');
+    expect(out).toContain('deepseek-plugin-cli multimodal set');
   });
 
   it('skill install --agent claude 正常执行', () => {

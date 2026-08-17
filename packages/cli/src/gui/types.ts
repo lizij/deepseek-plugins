@@ -1,5 +1,4 @@
 export interface ModelEntry {
-  role: 'primary' | 'fallback';
   index: number;
   baseUrl: string;
   model: string;

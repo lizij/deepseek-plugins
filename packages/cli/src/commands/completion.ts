@@ -7,8 +7,6 @@ _deepseek_services() {
   services=(
     'deepseek:DeepSeek 主 API Key'
     'vision:主多模态模型 API Key'
-    'vision.base_url:主多模态模型 base URL'
-    'vision.model:主多模态模型名称'
   )
   _describe 'service' services
 }
@@ -36,40 +34,17 @@ _deepseek_auth() {
   esac
 }
 
-_deepseek_multimodal_fallback() {
-  local curcontext="$curcontext" state line
-  typeset -A opt_args
-  local -a cmds
-  cmds=(
-    'add:添加备选多模态模型'
-    'list:列出所有多模态模型'
-    'remove:删除备选多模态模型'
-  )
-  _arguments -C \\
-    '1:fallback 子命令:->cmd' \\
-    '*::参数:->args'
-  case $state in
-    cmd) _describe 'fallback 子命令' cmds ;;
-    args)
-      case \${words[3]} in
-        add)
-          _arguments \\
-            '--base-url[API base URL]:URL:' \\
-            '--model[模型名称]:模型:'
-          ;;
-        remove) _message '请输入备选模型索引（从 0 开始）' ;;
-      esac
-      ;;
-  esac
-}
-
 _deepseek_multimodal() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
   local -a cmds
   cmds=(
-    'config:配置主多模态模型'
-    'fallback:管理备选多模态模型'
+    'list:列出所有多模态模型'
+    'set:设置第一个模型（索引 0）'
+    'add:添加模型到末尾'
+    'update:更新指定索引模型'
+    'remove:删除指定索引模型'
+    'move:调整模型优先级'
   )
   _arguments -C \\
     '1:multimodal 子命令:->cmd' \\
@@ -78,12 +53,31 @@ _deepseek_multimodal() {
     cmd) _describe 'multimodal 子命令' cmds ;;
     args)
       case \${words[2]} in
-        config)
+        set)
           _arguments \\
             '--base-url[API base URL]:URL:' \\
-            '--model[模型名称]:模型:'
+            '--model[模型名称]:模型:' \\
+            '--api-key[交互式设置 API Key]'
           ;;
-        fallback) _deepseek_multimodal_fallback ;;
+        add)
+          _arguments \\
+            '--base-url[API base URL]:URL:' \\
+            '--model[模型名称]:模型:' \\
+            '--api-key[交互式设置 API Key]'
+          ;;
+        update)
+          _arguments \\
+            '1:模型索引:' \\
+            '--base-url[API base URL]:URL:' \\
+            '--model[模型名称]:模型:' \\
+            '--api-key[交互式设置 API Key]'
+          ;;
+        remove) _message '请输入模型索引（从 0 开始）' ;;
+        move)
+          _arguments \\
+            '1:模型索引:' \\
+            '2:方向:(up down)'
+          ;;
       esac
       ;;
   esac
@@ -136,7 +130,7 @@ _deepseek_plugin_cli() {
   subcmds=(
     'auth:管理 API Key'
     'vision:图片识别（辅助识图）'
-    'multimodal:多模态模型配置（config/fallback）'
+    'multimodal:多模态模型配置管理'
     'audio:音频转写（ASR）'
     'pdf:PDF 文档理解'
     'balance:查询 DeepSeek API 余额'
@@ -175,11 +169,10 @@ _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
   local subcommands="auth vision multimodal audio pdf balance skill menubar token"
   local auth_cmds="set get unset list"
-  local multimodal_cmds="config fallback"
-  local fallback_cmds="add list remove"
+  local multimodal_cmds="list set add update remove move"
   local skill_cmds="install update"
   local token_cmds="scan today buckets report clear"
-  local services="deepseek vision vision.base_url vision.model"
+  local services="deepseek vision"
 
   case "\$COMP_CWORD" in
     1) COMPREPLY=( \$(compgen -W "\$subcommands --help --version" -- "\$cur") ) ;;
@@ -203,19 +196,16 @@ _deepseek_plugin_cli_completion() {
           ;;
         multimodal)
           case "\${COMP_WORDS[2]}" in
-            config) COMPREPLY=( \$(compgen -W "--base-url --model" -- "\$cur") ) ;;
-            fallback) COMPREPLY=( \$(compgen -W "\$fallback_cmds" -- "\$cur") ) ;;
+            set|add) COMPREPLY=( \$(compgen -W "--base-url --model --api-key" -- "\$cur") ) ;;
+            update) COMPREPLY=( \$(compgen -W "--base-url --model --api-key" -- "\$cur") ) ;;
+            move) COMPREPLY=( \$(compgen -W "up down" -- "\$cur") ) ;;
           esac
           ;;
       esac
       ;;
     4)
       case "\${COMP_WORDS[1]} \${COMP_WORDS[2]}" in
-        "multimodal fallback")
-          case "\${COMP_WORDS[3]}" in
-            add) COMPREPLY=( \$(compgen -W "--base-url --model" -- "\$cur") ) ;;
-          esac
-          ;;
+        "multimodal move") COMPREPLY=( \$(compgen -W "up down" -- "\$cur") ) ;;
       esac
       ;;
   esac

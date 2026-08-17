@@ -51,46 +51,56 @@ describe('vision', () => {
     expect(stderr).toContain('ENOENT');
   });
 
-  it('multimodal config --help 显示选项', () => {
-    const out = run('multimodal config --help');
+  it('multimodal set --help 显示选项', () => {
+    const out = run('multimodal set --help');
     expect(out).toContain('--base-url');
     expect(out).toContain('--model');
+    expect(out).toContain('--api-key');
   });
 
-  it('multimodal config 无参数时报错', () => {
-    const { stderr, status } = runOrError('multimodal config');
+  it('multimodal set 无参数时报错', () => {
+    const { stderr, status } = runOrError('multimodal set');
     expect(status).not.toBe(0);
-    expect(stderr).toContain('请提供');
+    expect(stderr).toContain('请至少提供一项');
   });
 
-  describe('multimodal fallback', () => {
-    it('fallback --help 显示子命令', () => {
-      const out = run('multimodal fallback --help');
-      expect(out).toContain('add');
+  describe('multimodal 子命令', () => {
+    it('multimodal --help 显示子命令', () => {
+      const out = run('multimodal --help');
       expect(out).toContain('list');
+      expect(out).toContain('set');
+      expect(out).toContain('add');
+      expect(out).toContain('update');
       expect(out).toContain('remove');
+      expect(out).toContain('move');
     });
 
-    it('fallback add --help 显示选项', () => {
-      const out = run('multimodal fallback add --help');
+    it('multimodal add --help 显示选项', () => {
+      const out = run('multimodal add --help');
       expect(out).toContain('--base-url');
       expect(out).toContain('--model');
+      expect(out).toContain('--api-key');
     });
 
-    it('fallback add 缺少参数时报错', () => {
-      expect(() => run('multimodal fallback add')).toThrow();
+    it('multimodal add 缺少参数时报错', () => {
+      expect(() => run('multimodal add')).toThrow();
     });
 
-    it('fallback list 正常执行', () => {
-      const out = run('multimodal fallback list');
-      // 可能输出"未配置"或列出模型，不应报错
+    it('multimodal list 正常执行', () => {
+      const out = run('multimodal list');
       expect(typeof out).toBe('string');
     });
 
-    it('fallback remove 无效索引报错', () => {
-      const { stderr, status } = runOrError('multimodal fallback remove abc');
+    it('multimodal remove 无效索引报错', () => {
+      const { stderr, status } = runOrError('multimodal remove abc');
       expect(status).not.toBe(0);
-      expect(stderr).toContain('有效的备选模型索引');
+      expect(stderr).toContain('有效的模型索引');
+    });
+
+    it('multimodal move 无效方向报错', () => {
+      const { stderr, status } = runOrError('multimodal move 0 left');
+      expect(status).not.toBe(0);
+      expect(stderr).toContain('方向必须是 up 或 down');
     });
   });
 });

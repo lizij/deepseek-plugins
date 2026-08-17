@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "0.17.1"
+  version: "1.1.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -37,13 +37,15 @@ metadata:
 
 ### 4. 多模态模型配置（Multimodal Config）
 
-管理多模态模型的 base_url / model / 备选容灾配置，同一套配置同时服务 vision/audio/pdf。
+管理多模态模型的 base_url / model / API Key 配置，同一套配置同时服务 vision/audio/pdf。模型按数组顺序依次尝试，任一成功即返回。
 
 ```bash
-scripts/deepseek-plugin-cli multimodal config --base-url <url> --model <name>   # 配置主模型
-scripts/deepseek-plugin-cli multimodal fallback add --base-url <url> --model <name>  # 添加备选模型
-scripts/deepseek-plugin-cli multimodal fallback list    # 列出所有模型
-scripts/deepseek-plugin-cli multimodal fallback remove <index>  # 删除备选模型
+scripts/deepseek-plugin-cli multimodal set --base-url <url> --model <name> --api-key   # 设置第一个模型（索引 0）
+scripts/deepseek-plugin-cli multimodal add --base-url <url> --model <name> --api-key    # 添加模型到末尾
+scripts/deepseek-plugin-cli multimodal list    # 列出所有模型（按调用优先级排列）
+scripts/deepseek-plugin-cli multimodal update <index> [--base-url <url>] [--model <name>] [--api-key]  # 更新指定索引模型
+scripts/deepseek-plugin-cli multimodal remove <index>  # 删除指定索引模型
+scripts/deepseek-plugin-cli multimodal move <index> <up|down>  # 调整模型优先级
 ```
 
 ### 5. 余额查询（Balance）
@@ -102,8 +104,7 @@ scripts/deepseek-plugin-cli auth set deepseek
 图片、音频、PDF 共用同一套多模态模型配置，配置一次即可服务所有模态：
 
 ```bash
-scripts/deepseek-plugin-cli auth set vision
-scripts/deepseek-plugin-cli multimodal config --base-url https://api.openai.com/v1 --model gpt-4o
+scripts/deepseek-plugin-cli multimodal set --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.6v --api-key
 ```
 
 ### 多模型容灾（可选）
@@ -111,8 +112,7 @@ scripts/deepseek-plugin-cli multimodal config --base-url https://api.openai.com/
 不同模型支持的模态可能不同（如某模型支持图片但不支持音频），容灾链会自动切换到支持当前模态的模型：
 
 ```bash
-scripts/deepseek-plugin-cli multimodal fallback add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet
-scripts/deepseek-plugin-cli auth set vision.fallback.0
+scripts/deepseek-plugin-cli multimodal add --base-url https://api.anthropic.com/v1 --model claude-3-5-sonnet --api-key
 ```
 
 ## 命令速查
@@ -122,10 +122,12 @@ scripts/deepseek-plugin-cli auth set <service>      # 设置 API Key
 scripts/deepseek-plugin-cli auth list               # 列出已注册 service
 scripts/deepseek-plugin-cli auth unset <service>    # 删除 API Key
 scripts/deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图
-scripts/deepseek-plugin-cli multimodal config [--base-url <url>] [--model <name>]  # 配置主多模态模型
-scripts/deepseek-plugin-cli multimodal fallback add --base-url <url> --model <name>  # 添加备选模型
-scripts/deepseek-plugin-cli multimodal fallback list    # 列出所有多模态模型
-scripts/deepseek-plugin-cli multimodal fallback remove <index>  # 删除备选模型
+scripts/deepseek-plugin-cli multimodal list    # 列出所有多模态模型（按调用优先级排列）
+scripts/deepseek-plugin-cli multimodal set [--base-url <url>] [--model <name>] [--api-key]  # 设置第一个模型（索引 0）
+scripts/deepseek-plugin-cli multimodal add --base-url <url> --model <name> [--api-key]  # 添加模型到末尾
+scripts/deepseek-plugin-cli multimodal update <index> [--base-url <url>] [--model <name>] [--api-key]  # 更新指定索引模型
+scripts/deepseek-plugin-cli multimodal remove <index>  # 删除指定索引模型
+scripts/deepseek-plugin-cli multimodal move <index> <up|down>  # 调整模型优先级
 scripts/deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR）
 scripts/deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解
 scripts/deepseek-plugin-cli balance [--json]        # 查询余额

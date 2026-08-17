@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getAllKeys, listServices } from '@deepseek-plugins/shared';
-import { loadAllConfigs } from '@deepseek-plugins/shared/multimodal-config';
+import { loadAllModels } from '@deepseek-plugins/shared/multimodal-config';
 import { fetchBalance } from '@deepseek-plugins/shared/balance';
 
 interface CheckItem {
@@ -46,7 +46,7 @@ export function registerDoctor(program: Command) {
       });
 
       // 4. 多模态模型配置
-      const configs = await loadAllConfigs();
+      const configs = await loadAllModels();
       const primary = configs[0];
       const hasPrimary = !!primary;
       const fallbackCount = Math.max(0, configs.length - 1);
@@ -54,17 +54,17 @@ export function registerDoctor(program: Command) {
         ok: hasPrimary,
         label: '多模态模型配置',
         detail: hasPrimary
-          ? `主模型: ${primary.model} @ ${primary.baseUrl}，备选 ${fallbackCount} 个`
-          : '未配置，运行: auth set vision + multimodal config',
+          ? `模型 #0: ${primary.model} @ ${primary.baseUrl}，共 ${configs.length} 个模型`
+          : '未配置，运行: multimodal set --base-url <url> --model <name> --api-key',
       });
 
       // 5. Vision API Key（单独检查，因为可能配了 base_url/model 但没配 key）
-      const hasVisionKey = !!allKeys['vision'];
+      const hasVisionKey = !!primary?.apiKey;
       if (hasPrimary && !hasVisionKey) {
         checks.push({
           ok: false,
           label: 'Vision API Key',
-          detail: '主模型已配置但缺少 API Key，运行: auth set vision',
+          detail: '模型 #0 已配置但缺少 API Key，运行: multimodal set --api-key',
         });
       }
 
