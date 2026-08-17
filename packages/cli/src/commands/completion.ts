@@ -6,7 +6,6 @@ _deepseek_services() {
   local -a services
   services=(
     'deepseek:DeepSeek 主 API Key'
-    'vision:主多模态模型 API Key'
   )
   _describe 'service' services
 }
@@ -180,7 +179,7 @@ _deepseek_plugin_cli_completion() {
   local multimodal_cmds="list set add update remove move"
   local skill_cmds="install update"
   local token_cmds="scan today buckets report clear"
-  local services="deepseek vision"
+  local services="deepseek"
 
   case "\$COMP_CWORD" in
     1) COMPREPLY=( \$(compgen -W "\$subcommands --help --version" -- "\$cur") ) ;;

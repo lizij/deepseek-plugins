@@ -9,14 +9,16 @@ import {
   RETENTION_MS,
   saveBuckets,
   saveScanMeta,
+  withScanLock,
 } from './storage.js';
 import { discoverScanTargets, readTargetLines } from './scanner.js';
 import { extractProject, parseLine } from './parser.js';
 import type { ScanResult, TokenBucket } from './types.js';
 
-/** 扫描所有 agent 日志，增量解析并聚合到桶 */
+/** 扫描所有 agent 日志，增量解析并聚合到桶（跨进程互斥，防止并发计数重复/丢失）。 */
 export async function scanAndAggregate(): Promise<ScanResult> {
-  ensureDataDir();
+  return withScanLock(async () => {
+    ensureDataDir();
   const targets = await discoverScanTargets();
   const meta = loadScanMeta();
   const buckets = loadBuckets();
@@ -153,4 +155,5 @@ export async function scanAndAggregate(): Promise<ScanResult> {
     total_buckets: allBuckets.length,
     sources: Array.from(sources),
   };
+  });
 }

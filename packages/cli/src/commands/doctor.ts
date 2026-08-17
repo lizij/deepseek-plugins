@@ -70,7 +70,7 @@ export function registerDoctor(program: Command) {
 
       // 6. DeepSeek 余额接口连通性（实际请求，免费）
       if (hasDeepSeekKey) {
-        process.stdout.write('  检查 DeepSeek 余额接口连通性...\r');
+        console.log('  检查 DeepSeek 余额接口连通性...');
         const { result, error } = await fetchBalance();
         if (result) {
           const main = result.balances[0];

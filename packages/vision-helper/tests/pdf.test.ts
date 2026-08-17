@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePdf, extractPdfFilename } from '../src/pdf.js';
+import { normalizePdf, extractPdfFilename, pdfToImages } from '../src/pdf.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeFile, unlink } from 'node:fs/promises';
+import { writeFile, unlink, readdir } from 'node:fs/promises';
 
 describe('pdf', () => {
   describe('normalizePdf', () => {
@@ -48,6 +48,19 @@ describe('pdf', () => {
 
     it('非 .pdf 文件追加 .pdf 后缀', () => {
       expect(extractPdfFilename('/tmp/my-report')).toBe('my-report.pdf');
+    });
+  });
+
+  describe('pdfToImages', () => {
+    it('转换失败时清理临时目录（不残留 /tmp/dsp-pdf-*）', async () => {
+      const tmpPath = join(tmpdir(), 'not-a-pdf.pdf');
+      await writeFile(tmpPath, Buffer.from('not a real pdf'));
+
+      await expect(pdfToImages(tmpPath)).rejects.toThrow('PDF 转图片失败');
+
+      const leftovers = (await readdir(tmpdir())).filter((f) => f.startsWith('dsp-pdf-'));
+      expect(leftovers).toHaveLength(0);
+      await unlink(tmpPath);
     });
   });
 });

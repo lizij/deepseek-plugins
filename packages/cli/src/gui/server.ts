@@ -30,7 +30,7 @@ export function startService(): Promise<number> {
     const method = req.method ?? 'GET';
 
     const host = req.headers.host ?? '';
-    if (!/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) {
+    if (!/^(localhost|127\.0\.0\.1|\[::1\]|\[::ffff:127\.0\.0\.1\])(:\d+)?$/.test(host)) {
       sendJson(res, 403, { error: '仅允许本机访问' });
       return;
     }

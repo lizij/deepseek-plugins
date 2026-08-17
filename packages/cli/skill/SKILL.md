@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "1.2.0"
+  version: "1.2.1"
 ---
 
 # DeepSeek Plugin Skill

@@ -37,7 +37,10 @@ async function buildMenuBar(): Promise<string | null> {
   writeFileSync(srcPath, menuBarSwiftSource);
   const outPath = join(outDir, 'DeepSeekMenuBar');
   try {
-    execSync(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${arch}-apple-macos13.0`, {
+    // swiftc -target 使用 x86_64 / arm64，而 os.arch() 返回 x64 / arm64，需映射
+    const cpu = arch();
+    const swiftArch = cpu === 'x64' ? 'x86_64' : cpu;
+    execSync(`swiftc "${srcPath}" -o "${outPath}" -parse-as-library -framework SwiftUI -framework AppKit -framework Combine -target ${swiftArch}-apple-macos13.0`, {
       stdio: 'pipe',
     });
     execSync(`chmod +x "${outPath}"`);

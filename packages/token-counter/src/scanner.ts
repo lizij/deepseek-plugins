@@ -139,7 +139,21 @@ export function readOpenCodeMessages(dbPath: string): string[] {
       if (typeof row.data === 'string') lines.push(row.data);
     }
     return lines;
-  } catch {
+  } catch (err) {
+    warnOpenCodeReadFailure(err);
     return [];
   }
+}
+
+let warnedOpenCodeRead = false;
+
+/** opencode 读取失败时输出一次性警告，避免数据静默缺失。 */
+function warnOpenCodeReadFailure(err: unknown): void {
+  if (warnedOpenCodeRead) return;
+  warnedOpenCodeRead = true;
+  const msg = err instanceof Error ? err.message : String(err);
+  const versionHint = /experimental/i.test(msg)
+    ? ' 当前 Node.js 版本需通过 --experimental-sqlite 启用 node:sqlite，或升级至 Node.js 22.13+。'
+    : '';
+  console.warn(`⚠ 无法读取 opencode 日志，opencode token 统计将跳过（${msg}）。${versionHint}`);
 }

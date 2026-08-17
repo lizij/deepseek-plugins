@@ -1,10 +1,11 @@
-import { writeFileSync } from 'node:fs';
 import {
   BUCKET_FILE,
   ensureDataDir,
   formatNumber,
   loadBuckets,
+  saveBuckets,
   SCAN_META_FILE,
+  writeFileAtomic,
 } from './storage.js';
 import type { DailyReport, TokenBreakdownItem, TokenBucket, TokenSummary } from './types.js';
 
@@ -143,9 +144,9 @@ export function formatReport(days: number): string {
   return lines.join('\n');
 }
 
-/** 清空所有 token 数据（桶 + 扫描元数据） */
+/** 清空所有 token 数据（桶 + 扫描元数据）。经 saveBuckets 写入，同步更新内存缓存。 */
 export function clearAll(): void {
   ensureDataDir();
-  writeFileSync(BUCKET_FILE, '[]', 'utf-8');
-  writeFileSync(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: '' }), 'utf-8');
+  saveBuckets([]);
+  writeFileAtomic(SCAN_META_FILE, JSON.stringify({ files: {}, last_scan: '' }));
 }

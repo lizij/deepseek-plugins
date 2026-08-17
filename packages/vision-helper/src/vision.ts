@@ -1,7 +1,7 @@
 import type { VisionConfig } from '@deepseek-plugins/shared/multimodal-config';
 import { DEFAULT_PROMPT } from '@deepseek-plugins/shared/multimodal-config';
 import { normalizeImage } from './image.js';
-import { normalizeAudio, guessAudioFormat } from './audio.js';
+import { toAudioBase64 } from './audio.js';
 import { normalizePdf, pdfToImages } from './pdf.js';
 import { normalizeVideo } from './video.js';
 
@@ -43,10 +43,8 @@ async function buildContentParts(modality: Modality, params: AnalyzeParams): Pro
       return [{ type: 'image_url', image_url: { url: imageUri, detail } }];
     }
     case 'audio': {
-      const dataUri = await normalizeAudio(params.input);
-      const format = guessAudioFormat(params.input);
-      const base64 = dataUri.split(',')[1] ?? dataUri;
-      return [{ type: 'input_audio', input_audio: { data: base64, format } }];
+      const { data, format } = await toAudioBase64(params.input);
+      return [{ type: 'input_audio', input_audio: { data, format } }];
     }
     case 'pdf': {
       if (/^https?:\/\//i.test(params.input) || /^data:/i.test(params.input)) {

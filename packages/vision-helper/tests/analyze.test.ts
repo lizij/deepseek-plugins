@@ -13,6 +13,7 @@ vi.mock('../src/image.js', () => ({
 vi.mock('../src/audio.js', () => ({
   normalizeAudio: vi.fn((input: string) => Promise.resolve(input)),
   guessAudioFormat: vi.fn(() => 'mp3'),
+  toAudioBase64: vi.fn((input: string) => Promise.resolve({ data: 'bWF0ZXJpYWw=', format: 'mp3' })),
 }));
 vi.mock('../src/pdf.js', () => ({
   normalizePdf: vi.fn((input: string) => Promise.resolve(input)),

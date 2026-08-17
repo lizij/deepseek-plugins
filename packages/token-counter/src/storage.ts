@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ScanMeta, TokenBucket } from './types.js';
@@ -12,6 +12,65 @@ export const BUCKET_MS = 30 * 60 * 1000;
 /** 桶数据保留天数：超过该时间的桶在扫描保存时裁剪，防止文件无限膨胀 */
 export const BUCKET_RETENTION_DAYS = 90;
 export const RETENTION_MS = BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+// ─── 扫描跨进程互斥锁 ───
+// 增量扫描是「读 meta → 读日志 → 写 buckets/meta」的多步操作，GUI daemon 与
+// menubar 的独立 CLI 进程可能并发执行。用基于 mkdir 原子性的锁目录串行化，
+// 避免并发读同一旧 meta、各自持有内存副本导致计数重复或丢失。
+
+const SCAN_LOCK_DIR = join(DATA_DIR, 'scan.lock');
+const SCAN_LOCK_STALE_MS = 60_000;
+const SCAN_LOCK_TIMEOUT_MS = 10_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** 尝试原子获取锁（mkdir 成功即获得）。 */
+function tryAcquireLock(): boolean {
+  try {
+    // 先确保数据目录存在（锁目录是其子目录）
+    mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+    // 非 recursive：已存在时抛错，从而保证「同一时刻仅一个持有者」
+    mkdirSync(SCAN_LOCK_DIR);
+    try { writeFileSync(join(SCAN_LOCK_DIR, 'pid'), String(process.pid), { mode: 0o600 }); } catch { /* ignore */ }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 清除超时（进程崩溃遗留）的陈旧锁。 */
+function removeStaleLock(): void {
+  try {
+    const st = statSync(SCAN_LOCK_DIR);
+    if (Date.now() - st.mtimeMs > SCAN_LOCK_STALE_MS) {
+      rmSync(SCAN_LOCK_DIR, { recursive: true, force: true });
+    }
+  } catch { /* ignore */ }
+}
+
+function releaseLock(): void {
+  try { rmSync(SCAN_LOCK_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+
+/** 在扫描锁保护下执行 fn；锁获取失败/超时时抛出明确错误。 */
+export async function withScanLock<T>(fn: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + SCAN_LOCK_TIMEOUT_MS;
+  for (;;) {
+    if (tryAcquireLock()) break;
+    removeStaleLock();
+    if (Date.now() > deadline) {
+      throw new Error('获取扫描锁超时（可能已有其他进程正在扫描），请稍后重试');
+    }
+    await sleep(150);
+  }
+  try {
+    return await fn();
+  } finally {
+    releaseLock();
+  }
+}
 
 // ─── 工具函数 ───
 

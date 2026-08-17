@@ -190,7 +190,7 @@ deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 
 - **Codex**：`~/.codex/logs/` 或 `~/.config/codex/logs/`
 - **Cursor**：`~/Library/Application Support/Cursor/logs/`
-- **opencode**：`~/.local/share/opencode/opencode.db`
+- **opencode**：`~/.local/share/opencode/opencode.db`（依赖内置 `node:sqlite`，Node 22.5–22.12 需 `--experimental-sqlite` 或升级至 22.13+，否则读取失败时会输出一次性警告）
 
 #### 其他 Agent
 
