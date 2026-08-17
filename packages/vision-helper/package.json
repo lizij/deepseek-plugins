@@ -31,7 +31,7 @@
     "vision-helper": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsup src/cli.ts src/vision.ts src/image.ts src/audio.ts src/pdf.ts src/normalize.ts --format esm --dts --clean && chmod +x dist/cli.js",
+    "build": "tsup src/cli.ts src/vision.ts src/image.ts src/audio.ts src/pdf.ts src/video.ts src/normalize.ts --format esm --dts --clean && chmod +x dist/cli.js",
     "dev": "tsup src/cli.ts src/vision.ts --format esm --watch",
     "test": "vitest run"
   },

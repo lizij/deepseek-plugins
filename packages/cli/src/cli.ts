@@ -6,6 +6,7 @@ import { registerVision } from './commands/vision.js';
 import { registerMultimodal } from './commands/multimodal.js';
 import { registerAudio } from './commands/audio.js';
 import { registerPdf } from './commands/pdf.js';
+import { registerVideo } from './commands/video.js';
 import { registerBalance } from './commands/balance.js';
 import { registerSkill } from './commands/skill.js';
 import { registerCompletion } from './commands/completion.js';
@@ -45,6 +46,7 @@ if (process.argv[2] === '__daemon') {
   registerMultimodal(program);
   registerAudio(program);
   registerPdf(program);
+  registerVideo(program);
   registerBalance(program);
   registerSkill(program);
   registerCompletion(program);

@@ -24,7 +24,7 @@ interface RegisterOptions {
 }
 
 /**
- * 注册多模态分析命令（vision / audio / pdf 共用）。
+ * 注册多模态分析命令（vision / audio / pdf / video 共用）。
  * 统一处理：加载配置 → 空检查 → 调用 analyzeWithFallback → 错误输出。
  */
 export function registerMultimodalCommand(program: Command, opts: RegisterOptions): void {

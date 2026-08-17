@@ -37,7 +37,7 @@ export function registerConfig(program: Command) {
 
       // 2. 多模态模型
       const wantVision = await confirm({
-        message: '是否配置多模态模型？（用于识图/音频/PDF 分析）',
+        message: '是否配置多模态模型？（用于识图/音频/PDF/视频分析）',
         default: true,
       });
       if (wantVision) {

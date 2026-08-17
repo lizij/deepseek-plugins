@@ -1,5 +1,10 @@
-import { basename } from 'node:path';
+import { basename, extname } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { readFile, unlink } from 'node:fs/promises';
 import { normalizeToDataUri } from './normalize.js';
+
+const execFileAsync = promisify(execFile);
 
 const MIME_BY_EXT: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -20,3 +25,34 @@ export function extractPdfFilename(input: string): string {
   const name = basename(input);
   return name.endsWith('.pdf') ? name : `${name}.pdf`;
 }
+
+/**
+ * 将本地 PDF 文件转换为 PNG 图片（每页一张），返回图片的 data URI 数组。
+ * 使用 sips（macOS）或 pdftoppm（Linux）。
+ */
+export async function pdfToImages(pdfPath: string): Promise<string[]> {
+  const tmpPrefix = `/tmp/pdf-page-${Date.now()}`;
+  const images: string[] = [];
+
+  try {
+    if (process.platform === 'darwin') {
+      await execFileAsync('sips', ['-s', 'format', 'png', pdfPath, '--out', `${tmpPrefix}.png`]);
+      const data = await readFile(`${tmpPrefix}.png`);
+      images.push(`data:image/png;base64,${data.toString('base64')}`);
+    } else {
+      await execFileAsync('pdftoppm', ['-png', '-r', '150', pdfPath, tmpPrefix]);
+      const fs = await import('node:fs/promises');
+      const files = (await fs.readdir('/tmp')).filter((f) => f.startsWith(basename(tmpPrefix)) && f.endsWith('.png')).sort();
+      for (const f of files) {
+        const data = await readFile(`/tmp/${f}`);
+        images.push(`data:image/png;base64,${data.toString('base64')}`);
+        await unlink(`/tmp/${f}`);
+      }
+    }
+  } catch (err) {
+    throw new Error(`PDF 转图片失败: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return images;
+}
+

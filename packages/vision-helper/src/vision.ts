@@ -2,10 +2,11 @@ import type { VisionConfig } from '@deepseek-plugins/shared/multimodal-config';
 import { DEFAULT_PROMPT } from '@deepseek-plugins/shared/multimodal-config';
 import { normalizeImage } from './image.js';
 import { normalizeAudio, guessAudioFormat } from './audio.js';
-import { normalizePdf, extractPdfFilename } from './pdf.js';
+import { normalizePdf, pdfToImages } from './pdf.js';
+import { normalizeVideo } from './video.js';
 
 /** 输入模态类型。 */
-export type Modality = 'image' | 'audio' | 'pdf';
+export type Modality = 'image' | 'audio' | 'pdf' | 'video';
 
 /** 通用多模态调用参数。 */
 export interface AnalyzeParams {
@@ -33,34 +34,31 @@ export class MultimodalApiError extends Error {
 /** 兼容旧名称。 */
 export type VisionApiError = MultimodalApiError;
 
-/**
- * 判断错误是否应跳过剩余模型（认证类错误换模型也无效）。
- * 401/403 直接跳过后续模型；其余错误（含 400 模态不支持）继续尝试下一个。
- */
-function shouldSkipRemaining(err: unknown): boolean {
-  if (err instanceof MultimodalApiError) {
-    return err.status === 401 || err.status === 403;
-  }
-  return false;
-}
-
-/** 根据模态类型构造 OpenAI 兼容 API 的 content part。 */
-async function buildContentPart(modality: Modality, params: AnalyzeParams): Promise<Record<string, unknown>> {
+/** 根据模态类型构造 OpenAI 兼容 API 的 content part 数组。 */
+async function buildContentParts(modality: Modality, params: AnalyzeParams): Promise<Record<string, unknown>[]> {
   switch (modality) {
     case 'image': {
       const imageUri = await normalizeImage(params.input);
       const detail = params.detail ?? 'high';
-      return { type: 'image_url', image_url: { url: imageUri, detail } };
+      return [{ type: 'image_url', image_url: { url: imageUri, detail } }];
     }
     case 'audio': {
       const dataUri = await normalizeAudio(params.input);
       const format = guessAudioFormat(params.input);
-      return { type: 'input_audio', input_audio: { data: dataUri, format } };
+      const base64 = dataUri.split(',')[1] ?? dataUri;
+      return [{ type: 'input_audio', input_audio: { data: base64, format } }];
     }
     case 'pdf': {
-      const dataUri = await normalizePdf(params.input);
-      const filename = extractPdfFilename(params.input);
-      return { type: 'file', file: { file_data: dataUri, filename } };
+      if (/^https?:\/\//i.test(params.input) || /^data:/i.test(params.input)) {
+        const dataUri = await normalizePdf(params.input);
+        return [{ type: 'file_url', file_url: { url: dataUri } }];
+      }
+      const images = await pdfToImages(params.input);
+      return images.map((url) => ({ type: 'image_url', image_url: { url } }));
+    }
+    case 'video': {
+      const videoUri = await normalizeVideo(params.input);
+      return [{ type: 'video_url', video_url: { url: videoUri } }];
     }
     default:
       throw new Error(`不支持的模态类型: ${modality}`);
@@ -72,6 +70,7 @@ export const DEFAULT_PROMPT_BY_MODALITY: Record<Modality, string> = {
   image: DEFAULT_PROMPT,
   audio: '请逐字转写（ASR）这段音频中所说的每一句话，原样输出文字内容，不要总结、不要翻译、不要补充说明。',
   pdf: '请详细描述这个 PDF 文档的内容。',
+  video: '请详细描述这段视频的内容，包括画面、动作、场景等关键信息。',
 };
 
 /**
@@ -85,7 +84,7 @@ export async function analyze(
   signal?: AbortSignal,
 ): Promise<string> {
   const prompt = params.prompt?.trim() || DEFAULT_PROMPT_BY_MODALITY[modality];
-  const contentPart = await buildContentPart(modality, params);
+  const contentParts = await buildContentParts(modality, params);
 
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const controller = new AbortController();
@@ -111,7 +110,7 @@ export async function analyze(
             role: 'user',
             content: [
               { type: 'text', text: prompt },
-              contentPart,
+              ...contentParts,
             ],
           },
         ],
@@ -123,7 +122,18 @@ export async function analyze(
   }
 
   if (!resp.ok) {
-    throw new MultimodalApiError(resp.status, `多模态模型请求失败 (HTTP ${resp.status})`);
+    let errMsg = '';
+    try {
+      const errBody = (await resp.json()) as { error?: { message?: string }; message?: string };
+      errMsg = errBody?.error?.message || errBody?.message || JSON.stringify(errBody);
+    } catch {
+      try {
+        errMsg = await resp.text();
+      } catch {
+        errMsg = '';
+      }
+    }
+    throw new MultimodalApiError(resp.status, `多模态模型请求失败 (HTTP ${resp.status})${errMsg ? ': ' + errMsg : ''}`);
   }
 
   const data = (await resp.json()) as {
@@ -163,9 +173,7 @@ export async function analyzeWithFallback(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`[${config.model} @ ${config.baseUrl}] ${msg}`);
-        // 认证类错误（401/403）换模型也无效，直接跳过剩余模型
-        if (shouldSkipRemaining(err)) break;
-        // 其余错误（400 模态不支持、5xx、网络错误等）继续尝试下一个模型
+        // 每个模型有独立的 API Key，任何错误都继续尝试下一个模型
       }
     }
   } finally {

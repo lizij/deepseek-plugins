@@ -60,7 +60,7 @@ describe('analyze（通用多模态）', () => {
     const text = await analyze(mockConfig, 'pdf', { input: 'https://example.com/doc.pdf' });
     expect(text).toBe('PDF 内容');
     const body = JSON.parse(mockFetch.mock.calls[0]![1].body);
-    expect(body.messages[0].content[1].type).toBe('file');
+    expect(body.messages[0].content[1].type).toBe('file_url');
   });
 
   it('使用模态默认 prompt（未提供时）', async () => {
@@ -131,12 +131,12 @@ describe('analyzeWithFallback（通用容灾）', () => {
       .rejects.toThrow('所有多模态模型均调用失败');
   });
 
-  it('401 错误跳过剩余模型', async () => {
+  it('401 错误仍尝试剩余模型', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 401 });
     await expect(analyzeWithFallback([mockConfig, { ...mockConfig, model: 'fb' }, { ...mockConfig, model: 'fb2' }], 'image', { input: 'https://example.com/photo.png' }))
       .rejects.toThrow('所有多模态模型均调用失败');
-    // 只应调用一次（401 跳过剩余）
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // 每个模型有独立 API Key，401 不跳过剩余模型
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it('audio 模态容灾切换', async () => {

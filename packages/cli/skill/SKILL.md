@@ -8,7 +8,7 @@ description: |
 license: MIT
 compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -35,9 +35,15 @@ metadata:
 
 详见 [references/pdf-helper.md](references/pdf-helper.md)
 
-### 4. 多模态模型配置（Multimodal Config）
+### 4. Video Helper（辅助视频理解）
 
-管理多模态模型的 base_url / model / API Key 配置，同一套配置同时服务 vision/audio/pdf。模型按数组顺序依次尝试，任一成功即返回。
+为纯文本模型补充视频内容理解能力，通过调用第三方多模态模型分析视频。
+
+详见 [references/video-helper.md](references/video-helper.md)
+
+### 5. 多模态模型配置（Multimodal Config）
+
+管理多模态模型的 base_url / model / API Key 配置，同一套配置同时服务 vision/audio/pdf/video。模型按数组顺序依次尝试，任一成功即返回。
 
 ```bash
 scripts/deepseek-plugin-cli multimodal set --base-url <url> --model <name> --api-key   # 设置第一个模型（索引 0）
@@ -130,6 +136,7 @@ scripts/deepseek-plugin-cli multimodal remove <index>  # 删除指定索引模�
 scripts/deepseek-plugin-cli multimodal move <index> <up|down>  # 调整模型优先级
 scripts/deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR）
 scripts/deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解
+scripts/deepseek-plugin-cli video <video> [-p <prompt>]  # 视频内容理解
 scripts/deepseek-plugin-cli balance [--json]        # 查询余额
 scripts/deepseek-plugin-cli token scan              # 扫描 agent 日志聚合 token
 scripts/deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）

@@ -102,6 +102,12 @@ _deepseek_pdf() {
     '1:PDF 文件:_files -g "*.pdf"'
 }
 
+_deepseek_video() {
+  _arguments -C \\
+    '(-p --prompt)'{-p,--prompt}'[提问内容]:提示词:' \\
+    '1:视频文件:_files -g "*.mp4 *.mov *.avi *.mkv *.webm"'
+}
+
 _deepseek_skill() {
   local -a cmds
   cmds=(
@@ -133,6 +139,7 @@ _deepseek_plugin_cli() {
     'multimodal:多模态模型配置管理'
     'audio:音频转写（ASR）'
     'pdf:PDF 文档理解'
+    'video:视频内容理解'
     'balance:查询 DeepSeek API 余额'
     'skill:安装与更新 Skill'
     'menubar:启动 macOS 菜单栏应用'
@@ -152,6 +159,7 @@ _deepseek_plugin_cli() {
         multimodal) _deepseek_multimodal ;;
         audio) _deepseek_audio ;;
         pdf) _deepseek_pdf ;;
+        video) _deepseek_video ;;
         balance) _arguments '--json[输出 JSON 格式]' ;;
         skill) _deepseek_skill ;;
         token) _deepseek_token ;;
@@ -167,7 +175,7 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 const BASH_COMPLETION = `# 由 deepseek-plugin-cli completion bash 生成
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision multimodal audio pdf balance skill menubar token"
+  local subcommands="auth vision multimodal audio pdf video balance skill menubar token"
   local auth_cmds="set get unset list"
   local multimodal_cmds="list set add update remove move"
   local skill_cmds="install update"
@@ -183,6 +191,7 @@ _deepseek_plugin_cli_completion() {
         multimodal) COMPREPLY=( \$(compgen -W "\$multimodal_cmds" -- "\$cur") ) ;;
         audio) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
         pdf) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
+        video) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
         skill) COMPREPLY=( \$(compgen -W "\$skill_cmds" -- "\$cur") ) ;;
         token) COMPREPLY=( \$(compgen -W "\$token_cmds" -- "\$cur") ) ;;
       esac

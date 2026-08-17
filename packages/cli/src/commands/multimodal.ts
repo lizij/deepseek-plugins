@@ -19,7 +19,7 @@ async function promptApiKey(message: string): Promise<string | undefined> {
 export function registerMultimodal(program: Command) {
   const multimodal = program
     .command('multimodal')
-    .description('管理多模态模型配置（base_url / model / API Key），按数组顺序依次尝试，同时服务 vision/audio/pdf');
+    .description('管理多模态模型配置（base_url / model / API Key），按数组顺序依次尝试，同时服务 vision/audio/pdf/video');
 
   // multimodal list — 列出所有模型
   multimodal
