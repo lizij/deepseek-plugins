@@ -32,6 +32,8 @@ struct TokenSummary: Codable {
     let todayInput: Int
     let todayOutput: Int
     let todayCached: Int
+    let todayCacheCreation: Int
+    let todayReasoning: Int
     let sevenDay: Int
     let allTime: Int
     let updatedAt: String
@@ -43,6 +45,8 @@ struct TokenSummary: Codable {
         case todayInput = "today_input"
         case todayOutput = "today_output"
         case todayCached = "today_cached"
+        case todayCacheCreation = "today_cache_creation"
+        case todayReasoning = "today_reasoning"
         case sevenDay = "seven_day"
         case allTime = "all_time"
         case updatedAt = "updated_at"
@@ -178,6 +182,8 @@ final class TokenManager: ObservableObject {
                     parts.append("输入: \(formatNumber(summary.todayInput))")
                     parts.append("输出: \(formatNumber(summary.todayOutput))")
                     parts.append("缓存: \(formatNumber(summary.todayCached))")
+                    parts.append("缓存创建: \(formatNumber(summary.todayCacheCreation))")
+                    parts.append("推理: \(formatNumber(summary.todayReasoning))")
                     parts.append("近7天: \(formatNumber(summary.sevenDay))")
                     self?.tokenDetail = parts.joined(separator: "  ")
                     self?.bySource = summary.bySource

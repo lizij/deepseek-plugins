@@ -1,11 +1,11 @@
 {
   "name": "@deepseek-plugins/cli",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "private": true,
   "description": "Unified CLI for DeepSeek plugins: API key management, vision analysis, balance query, skill management",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "bin": {
     "deepseek-plugin-cli": "./dist/deepseek-plugin-cli"

@@ -17,9 +17,11 @@ import { registerDoctor } from './commands/doctor.js';
 import { registerConfig } from './commands/config.js';
 
 // Node.js 版本检查（双重保险：banner 的 sh 层已检查，此处覆盖直接用 node 执行的情况）
-const _nodeMajor = parseInt(process.versions.node.split('.')[0] ?? '0', 10);
-if (_nodeMajor < 20) {
-  console.error(`❌ Node.js 版本过低（当前 v${process.version}），需要 20+，请升级后重试`);
+const _nodeVer = process.versions.node.split('.').map(Number);
+const _nodeMajor = _nodeVer[0] ?? 0;
+const _nodeMinor = _nodeVer[1] ?? 0;
+if (_nodeMajor < 22 || (_nodeMajor === 22 && _nodeMinor < 5)) {
+  console.error(`❌ Node.js 版本过低（当前 v${process.version}），需要 22.5+，请升级后重试`);
   process.exit(1);
 }
 

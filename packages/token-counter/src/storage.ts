@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ScanMeta, TokenBucket } from './types.js';
@@ -89,9 +89,16 @@ export function loadBuckets(): TokenBucket[] {
   }
 }
 
+/** 原子写入：先写临时文件再 rename，避免进程崩溃时 JSON 被截断导致数据全丢 */
+export function writeFileAtomic(filePath: string, data: string): void {
+  const tmp = `${filePath}.tmp`;
+  writeFileSync(tmp, data, 'utf-8');
+  renameSync(tmp, filePath);
+}
+
 export function saveBuckets(buckets: TokenBucket[]): void {
   ensureDataDir();
-  writeFileSync(BUCKET_FILE, JSON.stringify(buckets), 'utf-8');
+  writeFileAtomic(BUCKET_FILE, JSON.stringify(buckets));
   // 写入后更新缓存
   bucketCache = { mtime: getBucketFileMtime(), buckets };
 }
@@ -107,5 +114,5 @@ export function loadScanMeta(): ScanMeta {
 
 export function saveScanMeta(meta: ScanMeta): void {
   ensureDataDir();
-  writeFileSync(SCAN_META_FILE, JSON.stringify(meta), 'utf-8');
+  writeFileAtomic(SCAN_META_FILE, JSON.stringify(meta));
 }

@@ -5,7 +5,7 @@
   "description": "Native macOS menu bar app for DeepSeek plugins (balance, status, etc.)",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "main": "./dist/balance.js",
   "types": "./dist/balance.d.ts",

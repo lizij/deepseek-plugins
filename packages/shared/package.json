@@ -5,7 +5,7 @@
   "description": "Shared utilities: cross-platform secure API Key storage via encrypted local file",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "main": "./dist/credentials.js",
   "types": "./dist/credentials.d.ts",

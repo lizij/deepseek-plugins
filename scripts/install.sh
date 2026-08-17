@@ -6,13 +6,16 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 build() {
   if ! command -v node >/dev/null 2>&1; then
-    echo "❌ 未检测到 Node.js。构建需要 Node.js 20+，请安装：https://nodejs.org" >&2
+    echo "❌ 未检测到 Node.js。构建需要 Node.js 22.5+，请安装：https://nodejs.org" >&2
     exit 1
   fi
-  local node_major
-  node_major=$(node -p "parseInt(process.versions.node.split('.')[0])")
-  if [ "$node_major" -lt 20 ]; then
-    echo "❌ Node.js 版本过低（当前 v$(node -v)），构建需要 20+，请升级后重试" >&2
+  local node_ver
+  node_ver=$(node -p "process.versions.node.split('.').map(Number).join(',')")
+  local node_major node_minor
+  node_major=$(echo "$node_ver" | cut -d, -f1)
+  node_minor=$(echo "$node_ver" | cut -d, -f2)
+  if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 5 ]; }; then
+    echo "❌ Node.js 版本过低（当前 v$(node -v)），构建需要 22.5+，请升级后重试" >&2
     exit 1
   fi
   echo "==> 构建项目..."

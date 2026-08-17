@@ -5,7 +5,7 @@
   "description": "Multimodal helper CLI + cross-agent Skill for text-only models (image/audio/pdf)",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "main": "./dist/vision.js",
   "types": "./dist/vision.d.ts",

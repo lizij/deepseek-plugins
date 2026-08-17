@@ -6,9 +6,9 @@ description: |
   通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
   支持多多模态模型容灾切换。
 license: MIT
-compatibility: Requires Node.js 20+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
+compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "0.17.0"
+  version: "0.17.1"
 ---
 
 # DeepSeek Plugin Skill
@@ -81,10 +81,10 @@ scripts/deepseek-plugin-cli menubar --build # 强制重新编译
 
 ### 环境要求
 
-本 skill 依赖 `Node.js 20+`。首次使用前请先确认环境：
+本 skill 依赖 `Node.js 22.5+`。首次使用前请先确认环境：
 
 ```bash
-node --version  # 需 >= v20.0.0
+node --version  # 需 >= v22.5.0
 ```
 
 若未安装 Node.js 或版本过低，请先安装/升级：https://nodejs.org

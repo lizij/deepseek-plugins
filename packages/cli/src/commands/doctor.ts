@@ -18,11 +18,14 @@ export function registerDoctor(program: Command) {
       const checks: CheckItem[] = [];
 
       // 1. Node.js 版本
-      const nodeMajor = parseInt(process.versions.node.split('.')[0] ?? '0', 10);
+      const nodeVer = process.versions.node.split('.').map(Number);
+      const nodeMajor = nodeVer[0] ?? 0;
+      const nodeMinor = nodeVer[1] ?? 0;
+      const nodeOk = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 5);
       checks.push({
-        ok: nodeMajor >= 20,
+        ok: nodeOk,
         label: 'Node.js 版本',
-        detail: `v${process.version}（需要 20+）`,
+        detail: `v${process.version}（需要 22.5+）`,
       });
 
       // 2. 凭据文件 & 已配置的 service 数量
@@ -44,13 +47,14 @@ export function registerDoctor(program: Command) {
 
       // 4. 多模态模型配置
       const configs = await loadAllConfigs();
-      const hasPrimary = configs.length > 0;
+      const primary = configs[0];
+      const hasPrimary = !!primary;
       const fallbackCount = Math.max(0, configs.length - 1);
       checks.push({
         ok: hasPrimary,
         label: '多模态模型配置',
         detail: hasPrimary
-          ? `主模型: ${configs[0].model} @ ${configs[0].base_url}，备选 ${fallbackCount} 个`
+          ? `主模型: ${primary.model} @ ${primary.baseUrl}，备选 ${fallbackCount} 个`
           : '未配置，运行: auth set vision + multimodal config',
       });
 

@@ -39,7 +39,7 @@ deepseek-plugins/
 
 | 依赖 | 版本/说明 | 用途 |
 |------|-----------|------|
-| Node.js | ≥ 20 | 运行时 |
+| Node.js | ≥ 22.5 | 运行时 |
 | pnpm | 最新稳定版 | 包管理 |
 | Xcode Command Line Tools | 可选 | 编译原生菜单栏应用（仅 macOS 需要） |
 
