@@ -2,7 +2,7 @@ import type { VisionConfig } from '@deepseek-plugins/shared/multimodal-config';
 import { DEFAULT_PROMPT } from '@deepseek-plugins/shared/multimodal-config';
 import { normalizeImage } from './image.js';
 import { toAudioBase64 } from './audio.js';
-import { normalizePdf, pdfToImages } from './pdf.js';
+import { normalizePdf, pdfToImages, extractPdfFilename } from './pdf.js';
 import { normalizeVideo } from './video.js';
 
 /** 输入模态类型。 */
@@ -49,7 +49,8 @@ async function buildContentParts(modality: Modality, params: AnalyzeParams): Pro
     case 'pdf': {
       if (/^https?:\/\//i.test(params.input) || /^data:/i.test(params.input)) {
         const dataUri = await normalizePdf(params.input);
-        return [{ type: 'file_url', file_url: { url: dataUri } }];
+        const filename = extractPdfFilename(params.input);
+        return [{ type: 'file_url', file_url: { url: dataUri, filename } }];
       }
       const images = await pdfToImages(params.input);
       return images.map((url) => ({ type: 'image_url', image_url: { url } }));

@@ -16,6 +16,9 @@ export const DEFAULT_PROMPT = '请详细描述这张图片的内容。';
 /** 多模态模型配置在凭据文件中的存储 key。值为 JSON 数组，按调用优先级排列。 */
 const STORAGE_KEY = 'multimodal.models';
 
+/** 模型数量上限，防止 setModel 传入过大索引创建大量空模型。 */
+const MAX_MODELS = 50;
+
 /** 存储层的模型结构（snake_case，与 API 字段对齐）。 */
 interface StoredModel {
   base_url: string;
@@ -140,12 +143,15 @@ export async function loadAllConfigs(): Promise<MultimodalConfig[]> {
 /**
  * 设置指定索引位置模型的 base_url / model / api_key。
  * 只更新提供的字段，未提供的字段保持不变。
- * 若索引超出当前数组长度则新建空模型填充。
+ * 若索引超出当前数组长度则新建空模型填充（索引上限 MAX_MODELS）。
  */
 export async function setModel(
   idx: number,
   opts: { baseUrl?: string; model?: string; apiKey?: string },
 ): Promise<void> {
+  if (idx < 0 || idx >= MAX_MODELS) {
+    throw new Error(`模型索引超出范围（0-${MAX_MODELS - 1}）: ${idx}`);
+  }
   const models = await loadModels();
   while (models.length <= idx) {
     models.push({ base_url: '', model: '', api_key: '' });
@@ -154,7 +160,9 @@ export async function setModel(
   if (!m) return;
   if (opts.baseUrl !== undefined) m.base_url = opts.baseUrl;
   if (opts.model !== undefined) m.model = opts.model;
-  if (opts.apiKey !== undefined) m.api_key = opts.apiKey;
+  if (opts.apiKey !== undefined) {
+    m.api_key = opts.apiKey;
+  }
   await saveModels(models);
 }
 
@@ -168,6 +176,9 @@ export async function addModel(
   apiKey?: string,
 ): Promise<number> {
   const models = await loadModels();
+  if (models.length >= MAX_MODELS) {
+    throw new Error(`模型数量已达上限（${MAX_MODELS}），请先删除部分模型`);
+  }
   models.push({ base_url: baseUrl, model, api_key: apiKey ?? '' });
   await saveModels(models);
   return models.length - 1;
@@ -199,10 +210,7 @@ export async function updateModel(
   if (!m) return;
   if (opts.baseUrl !== undefined) m.base_url = opts.baseUrl;
   if (opts.model !== undefined) m.model = opts.model;
-  if (opts.apiKey !== undefined) {
-    if (opts.apiKey) m.api_key = opts.apiKey;
-    else m.api_key = '';
-  }
+  if (opts.apiKey !== undefined) m.api_key = opts.apiKey;
   await saveModels(models);
 }
 

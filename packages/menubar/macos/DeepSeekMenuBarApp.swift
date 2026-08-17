@@ -67,7 +67,7 @@ final class BalanceManager: ObservableObject {
     init(cliPath: String) {
         self.cliPath = cliPath
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
-            self?.fetchBalance()
+            MainActor.assumeIsolated { self?.fetchBalance() }
         }
         fetchBalance()
     }
@@ -140,7 +140,7 @@ final class TokenManager: ObservableObject {
     init(cliPath: String) {
         self.cliPath = cliPath
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
-            self?.fetchTokens()
+            MainActor.assumeIsolated { self?.fetchTokens() }
         }
         fetchTokens()
     }
@@ -200,8 +200,8 @@ final class TokenManager: ObservableObject {
         }
     }
 
-    /// 运行 CLI 命令（忽略输出，仅确保执行完成）
-    private func runCLI(arguments: [String]) {
+    /// 运行 CLI 命令（忽略输出，仅确保执行完成）。不依赖主线程，标记为 nonisolated。
+    nonisolated private func runCLI(arguments: [String]) {
         let task = Process()
         task.launchPath = "/usr/bin/env"
         task.arguments = arguments
