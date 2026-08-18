@@ -1,6 +1,17 @@
 import { createServer } from 'node:http';
 import { getAllKeys, getKey, setKey } from '@deepseek-plugins/shared';
-import { fetchBalance } from '@deepseek-plugins/shared/balance';
+import { fetchBalanceForSource, fetchAllBalances } from '@deepseek-plugins/shared/balance';
+import { fetchUsageForSource, fetchAllUsages } from '@deepseek-plugins/shared/usage';
+import { fetchModelsForSource, fetchAllModels } from '@deepseek-plugins/shared/models';
+import {
+  loadAllSources,
+  getSource,
+  addSource,
+  updateSource,
+  removeSource,
+  moveSource,
+} from '@deepseek-plugins/shared/sources';
+import { listProviders, isProviderSupported } from '@deepseek-plugins/shared/providers';
 import {
   loadAllModels,
   setModel,
@@ -52,11 +63,125 @@ export function startService(): Promise<number> {
       if (method === 'GET' && url === '/api/config') {
         const all = await getAllKeys();
         const configs = await loadAllModels();
+        const sources = await loadAllSources();
         const resp: ConfigResponse = {
           deepseekKeySet: !!all[DEEPSEEK_SERVICE],
           models: toModelEntries(configs),
+          sources,
         };
         sendJson(res, 200, resp);
+        return;
+      }
+
+      // 列出所有已支持的供应商
+      if (method === 'GET' && url === '/api/providers') {
+        const providers = listProviders().map((p) => ({
+          type: p.type,
+          name: p.name,
+          website: p.website,
+          defaultBaseUrl: p.defaultBaseUrl,
+          supportedFeatures: p.supportedFeatures,
+        }));
+        sendJson(res, 200, { providers });
+        return;
+      }
+
+      // 列出所有来源
+      if (method === 'GET' && url === '/api/sources') {
+        const sources = await loadAllSources();
+        sendJson(res, 200, { sources });
+        return;
+      }
+
+      // 新增来源
+      if (method === 'POST' && url === '/api/sources') {
+        const body = (await readBody(req)) as {
+          id?: string;
+          type?: string;
+          name?: string;
+          apiKey?: string;
+          baseUrl?: string;
+          features?: string[];
+        };
+        if (!body.id || !body.type || !body.apiKey) {
+          sendJson(res, 400, { error: 'id / type / apiKey 均为必填' });
+          return;
+        }
+        if (!isProviderSupported(body.type)) {
+          sendJson(res, 400, { error: `不支持的供应商类型: ${body.type}` });
+          return;
+        }
+        try {
+          await addSource(body.id, body.type as any, {
+            name: body.name,
+            apiKey: body.apiKey,
+            baseUrl: body.baseUrl,
+            features: body.features as any,
+          });
+          sendJson(res, 200, { ok: true });
+        } catch (e) {
+          sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+        return;
+      }
+
+      // 更新指定来源
+      const putSourceMatch = url.match(/^\/api\/sources\/([^/]+)$/);
+      if (method === 'PUT' && putSourceMatch) {
+        const id = decodeURIComponent(putSourceMatch[1]!);
+        const existing = await getSource(id);
+        if (!existing) {
+          sendJson(res, 404, { error: '来源不存在' });
+          return;
+        }
+        const body = (await readBody(req)) as {
+          name?: string;
+          apiKey?: string;
+          baseUrl?: string;
+          features?: string[];
+        };
+        const patch: { name?: string; apiKey?: string; baseUrl?: string; features?: any } = {};
+        if (body.name !== undefined) patch.name = body.name;
+        if (body.apiKey !== undefined && body.apiKey !== '') patch.apiKey = body.apiKey;
+        if (body.baseUrl !== undefined) patch.baseUrl = body.baseUrl || undefined;
+        if (body.features !== undefined) patch.features = body.features;
+        try {
+          await updateSource(id, patch);
+          sendJson(res, 200, { ok: true });
+        } catch (e) {
+          sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+        return;
+      }
+
+      // 删除指定来源
+      const delSourceMatch = url.match(/^\/api\/sources\/([^/]+)$/);
+      if (method === 'DELETE' && delSourceMatch) {
+        const id = decodeURIComponent(delSourceMatch[1]!);
+        const ok = await removeSource(id);
+        if (!ok) {
+          sendJson(res, 404, { error: '来源不存在' });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // 移动来源
+      const moveSourceMatch = url.match(/^\/api\/sources\/([^/]+)\/move$/);
+      if (method === 'POST' && moveSourceMatch) {
+        const id = decodeURIComponent(moveSourceMatch[1]!);
+        const body = (await readBody(req)) as { dir?: number };
+        if (body.dir !== -1 && body.dir !== 1) {
+          sendJson(res, 400, { error: 'dir 仅支持 -1（上移）或 1（下移）' });
+          return;
+        }
+        const ok = await moveSource(id, body.dir);
+        if (!ok) {
+          sendJson(res, 400, { error: '无法移动到该位置' });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
         return;
       }
 
@@ -178,10 +303,61 @@ export function startService(): Promise<number> {
 
       // ─── 余额端点 ───
 
-      if (method === 'GET' && url === '/api/balance') {
-        const { result, error } = await fetchBalance();
-        if (error) sendJson(res, 200, { result: null, error });
-        else sendJson(res, 200, { result, error: null });
+      if (method === 'GET' && url.startsWith('/api/balance')) {
+        const u = new URL(url, 'http://localhost');
+        const sourceId = u.searchParams.get('source');
+        if (sourceId) {
+          const source = await getSource(sourceId);
+          if (!source) {
+            sendJson(res, 404, { error: `来源不存在: ${sourceId}` });
+            return;
+          }
+          const result = await fetchBalanceForSource(source);
+          sendJson(res, 200, [result]);
+        } else {
+          const results = await fetchAllBalances();
+          sendJson(res, 200, results);
+        }
+        return;
+      }
+
+      // ─── 使用量端点 ───
+
+      if (method === 'GET' && url.startsWith('/api/usage')) {
+        const u = new URL(url, 'http://localhost');
+        const sourceId = u.searchParams.get('source');
+        if (sourceId) {
+          const source = await getSource(sourceId);
+          if (!source) {
+            sendJson(res, 404, { error: `来源不存在: ${sourceId}` });
+            return;
+          }
+          const result = await fetchUsageForSource(source);
+          sendJson(res, 200, [result]);
+        } else {
+          const results = await fetchAllUsages();
+          sendJson(res, 200, results);
+        }
+        return;
+      }
+
+      // ─── 来源模型列表端点 ───
+
+      if (method === 'GET' && url.startsWith('/api/source-models')) {
+        const u = new URL(url, 'http://localhost');
+        const sourceId = u.searchParams.get('source');
+        if (sourceId) {
+          const source = await getSource(sourceId);
+          if (!source) {
+            sendJson(res, 404, { error: `来源不存在: ${sourceId}` });
+            return;
+          }
+          const result = await fetchModelsForSource(source);
+          sendJson(res, 200, [result]);
+        } else {
+          const results = await fetchAllModels();
+          sendJson(res, 200, results);
+        }
         return;
       }
 

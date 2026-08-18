@@ -14,6 +14,32 @@ vi.mock('@deepseek-plugins/shared', () => ({
 
 vi.mock('@deepseek-plugins/shared/balance', () => ({
   fetchBalance: vi.fn(),
+  fetchBalanceForSource: vi.fn(),
+  fetchAllBalances: vi.fn(),
+}));
+
+vi.mock('@deepseek-plugins/shared/usage', () => ({
+  fetchUsageForSource: vi.fn(),
+  fetchAllUsages: vi.fn(),
+}));
+
+vi.mock('@deepseek-plugins/shared/models', () => ({
+  fetchModelsForSource: vi.fn(),
+  fetchAllModels: vi.fn(),
+}));
+
+vi.mock('@deepseek-plugins/shared/sources', () => ({
+  loadAllSources: vi.fn(),
+  getSource: vi.fn(),
+  addSource: vi.fn(),
+  updateSource: vi.fn(),
+  removeSource: vi.fn(),
+  moveSource: vi.fn(),
+}));
+
+vi.mock('@deepseek-plugins/shared/providers', () => ({
+  listProviders: vi.fn(),
+  isProviderSupported: vi.fn(),
 }));
 
 vi.mock('@deepseek-plugins/shared/multimodal-config', () => ({
@@ -33,7 +59,9 @@ vi.mock('@deepseek-plugins/token-counter', () => ({
 }));
 
 import { getAllKeys, getKey, setKey } from '@deepseek-plugins/shared';
-import { fetchBalance } from '@deepseek-plugins/shared/balance';
+import { fetchBalance, fetchAllBalances } from '@deepseek-plugins/shared/balance';
+import { loadAllSources, getSource, addSource, updateSource, removeSource, moveSource } from '@deepseek-plugins/shared/sources';
+import { listProviders, isProviderSupported } from '@deepseek-plugins/shared/providers';
 import { loadAllModels, addModel, setModel, updateModel, removeModel, moveModel } from '@deepseek-plugins/shared/multimodal-config';
 import { scanAndAggregate, getSummary, getBuckets, generateDailyReport } from '@deepseek-plugins/token-counter';
 import { toModelEntries } from '../src/gui/model-adapter.js';
@@ -138,6 +166,9 @@ describe('gui/server (HTTP routes)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loadAllSources).mockResolvedValue([]);
+    vi.mocked(listProviders).mockResolvedValue([]);
+    vi.mocked(isProviderSupported).mockReturnValue(false);
   });
 
   beforeAll(async () => {
@@ -269,10 +300,14 @@ describe('gui/server (HTTP routes)', () => {
   });
 
   it('GET /api/balance 返回余额', async () => {
-    vi.mocked(fetchBalance).mockResolvedValue({ result: { isAvailable: true, balances: [] }, error: undefined });
+    vi.mocked(fetchAllBalances).mockResolvedValue([
+      { source: { id: 'deepseek', name: 'DeepSeek', type: 'deepseek' }, result: { isAvailable: true, balances: [] }, error: undefined },
+    ]);
     const { status, body } = await request('/api/balance');
     expect(status).toBe(200);
-    expect(body.result.isAvailable).toBe(true);
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(1);
+    expect(body[0].result.isAvailable).toBe(true);
   });
 
   it('未知路径返回 404', async () => {

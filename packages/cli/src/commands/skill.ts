@@ -64,8 +64,9 @@ export function registerSkill(program: Command) {
 
       console.log('');
       console.log('安装完成。使用前请确保已配置:');
-      console.log('  # DeepSeek API Key');
-      console.log('  deepseek-plugin-cli auth set deepseek');
+      console.log('  # 模型来源（余额/使用量/模型列表查询）');
+      console.log('  deepseek-plugin-cli source providers   # 查看已支持的供应商');
+      console.log('  deepseek-plugin-cli source add --type deepseek --id deepseek --api-key');
       console.log('');
       console.log('  # 多模态模型');
       console.log('  deepseek-plugin-cli multimodal set --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.6v --api-key');

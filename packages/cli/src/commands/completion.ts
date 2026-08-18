@@ -33,6 +33,27 @@ _deepseek_auth() {
   esac
 }
 
+_deepseek_source() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+  local -a cmds
+  cmds=(
+    'providers:列出已支持的供应商'
+    'list:列出所有已配置的来源'
+    'add:新增来源'
+    'update:更新来源'
+    'remove:删除来源'
+    'move:调整来源优先级'
+    'features:查看来源启用的功能'
+  )
+  _arguments -C \\
+    '1:source 子命令:->cmd' \\
+    '*::参数:->args'
+  case $state in
+    cmd) _describe 'source 子命令' cmds ;;
+  esac
+}
+
 _deepseek_multimodal() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
@@ -134,12 +155,15 @@ _deepseek_plugin_cli() {
   local -a subcmds
   subcmds=(
     'auth:管理 API Key'
+    'source:管理模型来源'
     'vision:图片识别（辅助识图）'
     'multimodal:多模态模型配置管理'
     'audio:音频转写（ASR）'
     'pdf:PDF 文档理解'
     'video:视频内容理解'
-    'balance:查询 DeepSeek API 余额'
+    'balance:查询账户余额（多来源）'
+    'usage:查询使用量（多来源）'
+    'models:查询可用模型列表（多来源）'
     'skill:安装与更新 Skill'
     'menubar:启动 macOS 菜单栏应用'
     'token:Token 用量统计'
@@ -154,12 +178,15 @@ _deepseek_plugin_cli() {
     args)
       case \${words[2]} in
         auth) _deepseek_auth ;;
+        source) _deepseek_source ;;
         vision) _deepseek_vision ;;
         multimodal) _deepseek_multimodal ;;
         audio) _deepseek_audio ;;
         pdf) _deepseek_pdf ;;
         video) _deepseek_video ;;
-        balance) _arguments '--json[输出 JSON 格式]' ;;
+        balance) _arguments '--source[指定来源]:source: --json[输出 JSON 格式]' ;;
+        usage) _arguments '--source[指定来源]:source: --json[输出 JSON 格式]' ;;
+        models) _arguments '--source[指定来源]:source: --json[输出 JSON 格式]' ;;
         skill) _deepseek_skill ;;
         token) _deepseek_token ;;
       esac
@@ -174,8 +201,9 @@ compdef _deepseek_plugin_cli deepseek-plugin-cli
 const BASH_COMPLETION = `# 由 deepseek-plugin-cli completion bash 生成
 _deepseek_plugin_cli_completion() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local subcommands="auth vision multimodal audio pdf video balance skill menubar token"
+  local subcommands="auth source vision multimodal audio pdf video balance usage models skill menubar token"
   local auth_cmds="set get unset list"
+  local source_cmds="providers list add update remove move features"
   local multimodal_cmds="list set add update remove move"
   local skill_cmds="install update"
   local token_cmds="scan today buckets report clear"
@@ -186,11 +214,15 @@ _deepseek_plugin_cli_completion() {
     2)
       case "\${COMP_WORDS[1]}" in
         auth) COMPREPLY=( \$(compgen -W "\$auth_cmds" -- "\$cur") ) ;;
+        source) COMPREPLY=( \$(compgen -W "\$source_cmds" -- "\$cur") ) ;;
         vision) COMPREPLY=( \$(compgen -W "-p --prompt -d --detail" -- "\$cur") ) ;;
         multimodal) COMPREPLY=( \$(compgen -W "\$multimodal_cmds" -- "\$cur") ) ;;
         audio) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
         pdf) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
         video) COMPREPLY=( \$(compgen -W "-p --prompt" -- "\$cur") ) ;;
+        balance) COMPREPLY=( \$(compgen -W "--source --json" -- "\$cur") ) ;;
+        usage) COMPREPLY=( \$(compgen -W "--source --json" -- "\$cur") ) ;;
+        models) COMPREPLY=( \$(compgen -W "--source --json" -- "\$cur") ) ;;
         skill) COMPREPLY=( \$(compgen -W "\$skill_cmds" -- "\$cur") ) ;;
         token) COMPREPLY=( \$(compgen -W "\$token_cmds" -- "\$cur") ) ;;
       esac
@@ -200,6 +232,13 @@ _deepseek_plugin_cli_completion() {
         auth)
           case "\${COMP_WORDS[2]}" in
             set|get|unset) COMPREPLY=( \$(compgen -W "\$services" -- "\$cur") ) ;;
+          esac
+          ;;
+        source)
+          case "\${COMP_WORDS[2]}" in
+            add) COMPREPLY=( \$(compgen -W "--type --id --name --base-url --features --api-key" -- "\$cur") ) ;;
+            update) COMPREPLY=( \$(compgen -W "--name --base-url --features --api-key" -- "\$cur") ) ;;
+            move) COMPREPLY=( \$(compgen -W "up down" -- "\$cur") ) ;;
           esac
           ;;
         multimodal)

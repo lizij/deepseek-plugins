@@ -41,9 +41,9 @@ describe('doctor', () => {
     expect(stdout).toContain('凭据文件');
   });
 
-  it('doctor 包含 DeepSeek API Key 检查项', () => {
+  it('doctor 包含模型来源检查项', () => {
     const { stdout } = runOrError('doctor');
-    expect(stdout).toContain('DeepSeek API Key');
+    expect(stdout).toContain('模型来源');
   });
 
   it('doctor 包含多模态模型配置检查项', () => {

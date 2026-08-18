@@ -18,13 +18,33 @@
       "types": "./dist/balance.d.ts",
       "import": "./dist/balance.js"
     },
+    "./sources": {
+      "types": "./dist/sources.d.ts",
+      "import": "./dist/sources.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/registry.d.ts",
+      "import": "./dist/providers/registry.js"
+    },
+    "./providers/types": {
+      "types": "./dist/providers/types.d.ts",
+      "import": "./dist/providers/types.js"
+    },
+    "./usage": {
+      "types": "./dist/usage.d.ts",
+      "import": "./dist/usage.js"
+    },
+    "./models": {
+      "types": "./dist/models.d.ts",
+      "import": "./dist/models.js"
+    },
     "./multimodal-config": {
       "types": "./dist/multimodal-config.d.ts",
       "import": "./dist/multimodal-config.js"
     }
   },
   "scripts": {
-    "build": "tsup src/credentials.ts src/balance.ts src/multimodal-config.ts --format esm --dts --clean",
+    "build": "tsup src/credentials.ts src/balance.ts src/sources.ts src/usage.ts src/models.ts src/multimodal-config.ts src/providers/types.ts src/providers/registry.ts src/providers/deepseek.ts src/providers/opencode-zen.ts src/providers/opencode-go.ts src/providers/openrouter.ts --format esm --dts --clean",
     "dev": "tsup src/credentials.ts --format esm --watch",
     "test": "vitest run"
   },

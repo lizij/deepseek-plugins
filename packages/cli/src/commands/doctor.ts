@@ -1,7 +1,9 @@
 import { Command } from 'commander';
 import { getAllKeys, listServices } from '@deepseek-plugins/shared';
 import { loadAllModels } from '@deepseek-plugins/shared/multimodal-config';
-import { fetchBalance } from '@deepseek-plugins/shared/balance';
+import { loadAllSources } from '@deepseek-plugins/shared/sources';
+import { fetchBalanceForSource } from '@deepseek-plugins/shared/balance';
+import { fetchModelsForSource } from '@deepseek-plugins/shared/models';
 
 interface CheckItem {
   ok: boolean;
@@ -36,20 +38,20 @@ export function registerDoctor(program: Command) {
         detail: services.length > 0 ? `已配置 ${services.length} 个 service: ${services.join(', ')}` : '未配置任何 API Key',
       });
 
-      // 3. DeepSeek API Key
-      const allKeys = await getAllKeys();
-      const hasDeepSeekKey = !!allKeys['deepseek'];
+      // 3. 来源配置
+      const sources = await loadAllSources();
       checks.push({
-        ok: hasDeepSeekKey,
-        label: 'DeepSeek API Key',
-        detail: hasDeepSeekKey ? '已配置' : '未配置（余额查询不可用），运行: auth set deepseek',
+        ok: sources.length > 0,
+        label: '模型来源',
+        detail: sources.length > 0
+          ? `已配置 ${sources.length} 个来源: ${sources.map((s) => s.id).join(', ')}`
+          : '未配置任何来源，运行: source add --type <type> --id <id> --api-key',
       });
 
       // 4. 多模态模型配置
       const configs = await loadAllModels();
       const primary = configs[0];
       const hasPrimary = !!primary;
-      const fallbackCount = Math.max(0, configs.length - 1);
       checks.push({
         ok: hasPrimary,
         label: '多模态模型配置',
@@ -58,7 +60,7 @@ export function registerDoctor(program: Command) {
           : '未配置，运行: multimodal set --base-url <url> --model <name> --api-key',
       });
 
-      // 5. Vision API Key（单独检查，因为可能配了 base_url/model 但没配 key）
+      // 5. Vision API Key
       const hasVisionKey = !!primary?.apiKey;
       if (hasPrimary && !hasVisionKey) {
         checks.push({
@@ -68,23 +70,43 @@ export function registerDoctor(program: Command) {
         });
       }
 
-      // 6. DeepSeek 余额接口连通性（实际请求，免费）
-      if (hasDeepSeekKey) {
-        console.log('  检查 DeepSeek 余额接口连通性...');
-        const { result, error } = await fetchBalance();
-        if (result) {
-          const main = result.balances[0];
-          checks.push({
-            ok: true,
-            label: 'DeepSeek 余额接口',
-            detail: `可达，账户${result.isAvailable ? '可用' : '不可用'}${main ? `，余额 ${main.totalBalance} ${main.currency}` : ''}`,
-          });
-        } else {
-          checks.push({
-            ok: false,
-            label: 'DeepSeek 余额接口',
-            detail: `不可达: ${error}`,
-          });
+      // 6. 各来源功能连通性检查
+      for (const source of sources) {
+        if (source.features.includes('balance')) {
+          console.log(`  检查来源 ${source.id} 的余额接口...`);
+          const { result, error } = await fetchBalanceForSource(source);
+          if (result) {
+            const main = result.balances[0];
+            checks.push({
+              ok: true,
+              label: `来源 ${source.id} 余额接口`,
+              detail: `可达，账户${result.isAvailable ? '可用' : '不可用'}${main ? `，余额 ${main.totalBalance} ${main.currency}` : ''}`,
+            });
+          } else {
+            checks.push({
+              ok: false,
+              label: `来源 ${source.id} 余额接口`,
+              detail: `不可达: ${error}`,
+            });
+          }
+        }
+
+        if (source.features.includes('models')) {
+          console.log(`  检查来源 ${source.id} 的模型列表接口...`);
+          const { models, error } = await fetchModelsForSource(source);
+          if (models) {
+            checks.push({
+              ok: true,
+              label: `来源 ${source.id} 模型接口`,
+              detail: `可达，共 ${models.length} 个模型`,
+            });
+          } else {
+            checks.push({
+              ok: false,
+              label: `来源 ${source.id} 模型接口`,
+              detail: `不可达: ${error}`,
+            });
+          }
         }
       }
 

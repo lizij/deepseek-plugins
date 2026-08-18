@@ -146,19 +146,14 @@
 </header>
 
 <main>
-  <!-- DeepSeek API Key -->
+  <!-- 来源管理 -->
   <section class="card">
-    <h2>DeepSeek API Key <span class="badge primary">余额查询</span></h2>
-    <div class="row">
-      <div class="field" style="flex:2">
-        <label>API Key<span class="pw-toggle" onclick="toggleDsPw(this)">显示</span></label>
-        <input type="password" id="ds-key" placeholder="sk-..." autocomplete="off" />
-      </div>
-      <div>
-        <button class="primary" onclick="saveDeepSeekKey()">保存</button>
-      </div>
+    <h2>模型来源 <span class="badge primary">余额 / 使用量 / 模型列表</span></h2>
+    <div id="source-list"></div>
+    <div class="add-bar">
+      <div class="hint">管理多个模型服务来源（DeepSeek 官方、OpenCode Zen/Go、OpenRouter 等），支持余额、使用量、模型列表查询。</div>
+      <button class="primary" onclick="openAddSource()">+ 添加来源</button>
     </div>
-    <div class="hint">用于 <code>balance</code> 余额查询与菜单栏应用。加密存储于本地，不会上传。</div>
   </section>
 
   <!-- 多模态模型 -->
@@ -224,7 +219,8 @@
 
 <script>
 const API = '';
-let state = { deepseekKeySet: false, models: [] };
+let state = { deepseekKeySet: false, models: [], sources: [] };
+let providers = [];
 
 function $(id) { return document.getElementById(id); }
 
@@ -264,6 +260,8 @@ async function api(method, path, body) {
 async function refresh() {
   try {
     state = await api('GET', '/api/config');
+    const provResp = await api('GET', '/api/providers');
+    providers = provResp.providers || [];
     render();
   } catch (e) {
     toast(e.message, 'err');
@@ -271,8 +269,7 @@ async function refresh() {
 }
 
 function render() {
-  $('ds-key').value = '';
-  $('ds-key').placeholder = state.deepseekKeySet ? '••••••••（已设置，留空则不修改）' : 'sk-...';
+  renderSources();
 
   const list = $('model-list');
   list.innerHTML = '';
@@ -281,6 +278,204 @@ function render() {
     return;
   }
   state.models.forEach((m, i) => list.appendChild(renderModel(m, i)));
+}
+
+function renderSources() {
+  const list = $('source-list');
+  list.innerHTML = '';
+  if (state.sources.length === 0) {
+    list.innerHTML = '<div class="empty">尚未配置任何来源。点击下方按钮添加来源。</div>';
+    return;
+  }
+  state.sources.forEach((s, i) => list.appendChild(renderSource(s, i)));
+}
+
+function renderSource(s, i) {
+  const div = document.createElement('div');
+  div.className = 'model-item';
+  const badge = '<span class="badge primary">#' + i + '</span>';
+  const provider = providers.find(p => p.type === s.type);
+  const providerName = provider ? provider.name : s.type;
+
+  const upBtn = i > 0
+    ? '<button class="ghost" title="上移" onclick="moveSource(\'' + esc(s.id) + '\',-1)">↑</button>' : '';
+  const downBtn = i < state.sources.length - 1
+    ? '<button class="ghost" title="下移" onclick="moveSource(\'' + esc(s.id) + '\',1)">↓</button>' : '';
+
+  const featureBadges = (s.features || []).map(f =>
+    '<span class="badge" style="background:#e0e7ff;color:#3730a3;margin-right:4px">' + f + '</span>'
+  ).join('');
+
+  div.innerHTML =
+    '<div class="head">' +
+      '<div class="title">' + badge + '<span>' + esc(s.name) + '</span>' +
+        '<span class="hint" style="margin-left:8px">(' + esc(providerName) + ')</span>' +
+      '</div>' +
+      '<div class="actions">' + upBtn + downBtn +
+        '<button class="ghost" title="查看余额" onclick="showSourceBalance(\'' + esc(s.id) + '\')">余额</button>' +
+        '<button class="ghost" title="查看模型" onclick="showSourceModels(\'' + esc(s.id) + '\')">模型</button>' +
+        '<button class="danger" onclick="removeSource(\'' + esc(s.id) + '\')">删除</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="row">' +
+      '<div class="field"><label>来源 ID</label>' +
+        '<input type="text" value="' + esc(s.id) + '" disabled />' +
+      '</div>' +
+      '<div class="field"><label>显示名称</label>' +
+        '<input type="text" data-sid="' + esc(s.id) + '" data-sk="name" value="' + esc(s.name) + '" />' +
+      '</div>' +
+      '<div class="field"><label>API Key<span class="pw-toggle" onclick="toggleSourcePw(this)">显示</span></label>' +
+        '<input type="password" data-sid="' + esc(s.id) + '" data-sk="apiKey" value="' + esc(s.apiKey) + '" placeholder="已设置，留空不修改" autocomplete="off" />' +
+      '</div>' +
+    '</div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<div class="field"><label>Base URL（可选）</label>' +
+        '<input type="text" data-sid="' + esc(s.id) + '" data-sk="baseUrl" value="' + esc(s.baseUrl || '') + '" placeholder="' + esc(provider ? provider.defaultBaseUrl : '') + '" />' +
+      '</div>' +
+      '<div class="field"><label>功能</label>' +
+        '<div style="padding-top:8px">' + featureBadges + '</div>' +
+      '</div>' +
+      '<div><button class="primary" onclick="saveSource(\'' + esc(s.id) + '\')">保存</button></div>' +
+    '</div>';
+  return div;
+}
+
+function toggleSourcePw(el) {
+  const inp = el.closest('.field').querySelector('input');
+  if (inp.type === 'password') { inp.type = 'text'; el.textContent = '隐藏'; }
+  else { inp.type = 'password'; el.textContent = '显示'; }
+}
+
+function collectSource(id) {
+  const inputs = document.querySelectorAll('input[data-sid="' + id + '"]');
+  const out = {};
+  inputs.forEach(inp => {
+    const k = inp.getAttribute('data-sk');
+    let v = inp.value.trim();
+    if (k === 'apiKey' && v === '') v = undefined;
+    out[k] = v;
+  });
+  return out;
+}
+
+async function saveSource(id) {
+  const patch = collectSource(id);
+  try {
+    await api('PUT', '/api/sources/' + encodeURIComponent(id), patch);
+    toast('已保存', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function removeSource(id) {
+  if (!confirm('确定删除来源 ' + id + ' 吗？')) return;
+  try {
+    await api('DELETE', '/api/sources/' + encodeURIComponent(id));
+    toast('已删除', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function moveSource(id, dir) {
+  try {
+    await api('POST', '/api/sources/' + encodeURIComponent(id) + '/move', { dir });
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function openAddSource() {
+  const list = $('source-list');
+  const div = document.createElement('div');
+  div.className = 'model-item';
+  const providerOptions = providers.map(p =>
+    '<option value="' + p.type + '">' + p.name + ' (' + p.supportedFeatures.join(', ') + ')</option>'
+  ).join('');
+  div.innerHTML =
+    '<div class="head"><div class="title"><span class="badge primary">新增</span></div>' +
+      '<div class="actions"><button class="ghost" onclick="this.closest(\'.model-item\').remove()">取消</button></div>' +
+    '</div>' +
+    '<div class="row">' +
+      '<div class="field"><label>供应商</label>' +
+        '<select id="new-source-type" onchange="onProviderChange()">' + providerOptions + '</select>' +
+      '</div>' +
+      '<div class="field"><label>来源 ID</label>' +
+        '<input type="text" id="new-source-id" placeholder="唯一标识，如 deepseek" />' +
+      '</div>' +
+      '<div class="field"><label>显示名称</label>' +
+        '<input type="text" id="new-source-name" placeholder="可选，默认取供应商名称" />' +
+      '</div>' +
+    '</div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<div class="field" style="flex:2"><label>API Key</label>' +
+        '<input type="password" id="new-source-key" placeholder="sk-..." autocomplete="off" />' +
+      '</div>' +
+      '<div class="field"><label>Base URL（可选）</label>' +
+        '<input type="text" id="new-source-url" placeholder="默认使用供应商地址" />' +
+      '</div>' +
+      '<div><button class="primary" onclick="addSource()">添加</button></div>' +
+    '</div>';
+  list.appendChild(div);
+}
+
+function onProviderChange() {
+  const type = $('new-source-type').value;
+  const p = providers.find(x => x.type === type);
+  if (p) {
+    $('new-source-url').placeholder = p.defaultBaseUrl;
+  }
+}
+
+async function addSource() {
+  const type = $('new-source-type').value;
+  const id = $('new-source-id').value.trim();
+  const name = $('new-source-name').value.trim();
+  const apiKey = $('new-source-key').value.trim();
+  const baseUrl = $('new-source-url').value.trim();
+  if (!id || !apiKey) {
+    toast('请填写来源 ID 和 API Key', 'err');
+    return;
+  }
+  try {
+    await api('POST', '/api/sources', { id, type, name: name || undefined, apiKey, baseUrl: baseUrl || undefined });
+    toast('已添加', 'ok');
+    refresh();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function showSourceBalance(id) {
+  try {
+    const arr = await api('GET', '/api/balance?source=' + encodeURIComponent(id));
+    const r = Array.isArray(arr) ? arr[0] : arr;
+    if (!r || r.error) { toast(r ? r.error : '查询失败', 'err'); return; }
+    const b = r.result && r.result.balances && r.result.balances[0];
+    if (b) {
+      toast(r.source.name + ': ' + b.totalBalance + ' ' + b.currency + (r.result.isAvailable ? ' (可用)' : ' (不可用)'), 'ok');
+    } else {
+      toast('暂无余额数据', 'err');
+    }
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function showSourceModels(id) {
+  try {
+    const arr = await api('GET', '/api/source-models?source=' + encodeURIComponent(id));
+    const r = Array.isArray(arr) ? arr[0] : arr;
+    if (!r || r.error) { toast(r ? r.error : '查询失败', 'err'); return; }
+    const models = r.models || [];
+    alert(r.source.name + ' 可用模型 (' + models.length + ' 个):\n\n' + models.map(m => '- ' + m.id).join('\n'));
+  } catch (e) {
+    toast(e.message, 'err');
+  }
 }
 
 function renderModel(m, i) {
@@ -319,27 +514,6 @@ function togglePw(el) {
   const inp = el.closest('.field').querySelector('input');
   if (inp.type === 'password') { inp.type = 'text'; el.textContent = '隐藏'; }
   else { inp.type = 'password'; el.textContent = '显示'; }
-}
-
-async function toggleDsPw(el) {
-  const inp = $('ds-key');
-  if (inp.type === 'password') {
-    // 切换为可见时，若输入框为空则拉取已保存的 Key
-    if (!inp.value) {
-      try {
-        const data = await api('GET', '/api/deepseek-key');
-        inp.value = data.apiKey || '';
-      } catch (e) {
-        toast(e.message, 'err');
-        return;
-      }
-    }
-    inp.type = 'text';
-    el.textContent = '隐藏';
-  } else {
-    inp.type = 'password';
-    el.textContent = '显示';
-  }
 }
 
 function esc(s) {
@@ -423,18 +597,6 @@ async function addModel(btn) {
   try {
     await api('POST', '/api/models', { baseUrl, model, apiKey });
     toast('已添加', 'ok');
-    refresh();
-  } catch (e) {
-    toast(e.message, 'err');
-  }
-}
-
-async function saveDeepSeekKey() {
-  const v = $('ds-key').value.trim();
-  if (!v) { toast('请输入 API Key，或留空保持不变', 'err'); return; }
-  try {
-    await api('PUT', '/api/deepseek-key', { apiKey: v });
-    toast('已保存', 'ok');
     refresh();
   } catch (e) {
     toast(e.message, 'err');

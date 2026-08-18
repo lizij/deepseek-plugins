@@ -3,8 +3,12 @@ import { input, confirm, password } from '@inquirer/prompts';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { getAllKeys, updateCredentials, setKey } from '@deepseek-plugins/shared';
 import { setModel, addModel } from '@deepseek-plugins/shared/multimodal-config';
+import { addSource } from '@deepseek-plugins/shared/sources';
+import { listProviders } from '@deepseek-plugins/shared/providers';
+import type { ProviderType } from '@deepseek-plugins/shared/providers/types';
 
 const STORAGE_KEY = 'multimodal.models';
+const SOURCES_KEY = 'sources';
 
 /** 配置管理命令：init（交互式向导）、export（导出）、import（导入）。 */
 export function registerConfig(program: Command) {
@@ -15,7 +19,7 @@ export function registerConfig(program: Command) {
   // config init — 交互式配置向导
   config
     .command('init')
-    .description('交互式初始化向导，引导完成 DeepSeek Key 和多模态模型配置')
+    .description('交互式初始化向导，引导完成来源和多模态模型配置')
     .action(async () => {
       console.log('');
       console.log('🚀 DeepSeek Plugins 配置向导');
@@ -23,15 +27,38 @@ export function registerConfig(program: Command) {
       console.log('将引导你完成必要的配置，也可随时跳过不需要的项。');
       console.log('');
 
-      // 1. DeepSeek API Key
-      const wantDeepSeek = await confirm({
-        message: '是否配置 DeepSeek API Key？（用于余额查询）',
+      // 1. 模型来源
+      const wantSource = await confirm({
+        message: '是否配置模型来源？（用于余额/使用量/模型列表查询）',
         default: true,
       });
-      if (wantDeepSeek) {
-        const key = await password({ message: '输入 DeepSeek API Key:', mask: true });
-        await updateCredentials((creds) => { creds['deepseek'] = key; });
-        console.log('✓ DeepSeek API Key 已保存');
+      if (wantSource) {
+        const providers = listProviders();
+        console.log('可用供应商:');
+        providers.forEach((p, i) => {
+          console.log(`  ${i + 1}. ${p.name} (${p.type}) - 功能: ${p.supportedFeatures.join(', ')}`);
+        });
+        const typeIdx = await input({
+          message: '选择供应商编号:',
+          default: '1',
+        });
+        const idx = parseInt(typeIdx, 10) - 1;
+        const provider = providers[idx];
+        if (!provider) {
+          console.error('✗ 无效的供应商编号');
+        } else {
+          const id = await input({
+            message: '输入来源 id（唯一标识）:',
+            default: provider.type,
+          });
+          const key = await password({ message: `输入 ${provider.name} 的 API Key:`, mask: true });
+          try {
+            await addSource(id, provider.type as ProviderType, { apiKey: key });
+            console.log(`✓ 来源 ${id} (${provider.name}) 已配置`);
+          } catch (e) {
+            console.error(`✗ ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
       }
       console.log('');
 
@@ -103,6 +130,14 @@ export function registerConfig(program: Command) {
           exportData[STORAGE_KEY] = rawModels;
         }
       }
+      const rawSources = allKeys[SOURCES_KEY];
+      if (rawSources) {
+        try {
+          exportData[SOURCES_KEY] = JSON.parse(rawSources);
+        } catch {
+          exportData[SOURCES_KEY] = rawSources;
+        }
+      }
 
       const data = JSON.stringify(exportData, null, 2);
       writeFileSync(file, data, { mode: 0o600 });
@@ -143,12 +178,17 @@ export function registerConfig(program: Command) {
         return;
       }
 
-      // 分离多模态模型配置与其他键
+      // 分离多模态模型配置、来源配置与其他键
       const multimodalKeys: Record<string, string> = {};
+      const sourceKeys: Record<string, string> = {};
       const otherKeys: Record<string, string> = {};
       for (const [k, v] of Object.entries(data)) {
         if (k === STORAGE_KEY) {
           multimodalKeys[k] = typeof v === 'string' ? v : JSON.stringify(v);
+          continue;
+        }
+        if (k === SOURCES_KEY) {
+          sourceKeys[k] = typeof v === 'string' ? v : JSON.stringify(v);
           continue;
         }
         if (typeof v !== 'string') continue;
@@ -159,16 +199,23 @@ export function registerConfig(program: Command) {
         }
       }
 
-      // 非多模态键直接写入
+      // 非多模态、非来源键直接写入
       if (Object.keys(otherKeys).length > 0) {
         await updateCredentials((creds) => {
           for (const [k, v] of Object.entries(otherKeys)) creds[k] = v;
         });
       }
 
-      // 多模态模型配置：支持新格式（multimodal.models）和旧格式（vision.* 扁平键）
+      // 多模态模型配置
       if (Object.keys(multimodalKeys).length > 0) {
         await importMultimodalConfig(multimodalKeys);
+      }
+
+      // 来源配置
+      if (Object.keys(sourceKeys).length > 0) {
+        await updateCredentials((creds) => {
+          creds[SOURCES_KEY] = sourceKeys[SOURCES_KEY]!;
+        });
       }
 
       console.log(`✓ 已导入 ${count} 项配置`);

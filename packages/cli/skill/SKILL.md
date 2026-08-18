@@ -1,14 +1,14 @@
 ---
 name: deepseek-plugin-skill
 description: |
-  当用户需要识别图片、分析图像内容、转写音频、理解 PDF 文档、查询 DeepSeek API 余额、统计 token 用量或配置多模态模型时使用此 skill。
-  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、语音转写、文档理解、余额查询与 token 用量统计能力。
-  通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询 DeepSeek API 账户余额，扫描本地 agent 日志统计 token 消耗。
-  支持多多模态模型容灾切换。
+  当用户需要识别图片、分析图像内容、转写音频、理解 PDF 文档、查询多来源账户余额/使用量、统计 token 用量或配置多模态模型时使用此 skill。
+  为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、语音转写、文档理解、多来源余额/使用量查询与 token 用量统计能力。
+  通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询多个模型来源的账户余额/使用量，扫描本地 agent 日志统计 token 消耗。
+  支持多模态模型容灾切换和多来源余额查询。
 license: MIT
 compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "1.2.2"
+  version: "1.3.0"
 ---
 
 # DeepSeek Plugin Skill
@@ -54,16 +54,51 @@ scripts/deepseek-plugin-cli multimodal remove <index>  # 删除指定索引模�
 scripts/deepseek-plugin-cli multimodal move <index> <up|down>  # 调整模型优先级
 ```
 
-### 5. 余额查询（Balance）
+### 5. 来源管理（Source）
 
-查询 DeepSeek API 账户余额。
+管理多个模型服务来源（DeepSeek 官方、OpenCode Zen/Go、OpenRouter 等），每个来源可配置 API Key 和支持的功能（余额查询、使用量查询、模型列表）。
 
 ```bash
-scripts/deepseek-plugin-cli balance        # 人类可读格式
-scripts/deepseek-plugin-cli balance --json # JSON 格式
+scripts/deepseek-plugin-cli source providers                                    # 列出所有已支持的供应商及其功能
+scripts/deepseek-plugin-cli source list                                          # 列出所有已配置的来源
+scripts/deepseek-plugin-cli source add --type deepseek --id deepseek --api-key   # 新增来源
+scripts/deepseek-plugin-cli source update <id> [--name <name>] [--api-key]       # 更新来源
+scripts/deepseek-plugin-cli source remove <id>                                   # 删除来源
+scripts/deepseek-plugin-cli source move <id> <up|down>                           # 调整来源优先级
+scripts/deepseek-plugin-cli source features <id>                                 # 查看来源启用的功能
 ```
 
-### 6. Token 用量统计（Token Counter）
+### 6. 余额查询（Balance）
+
+查询一个或多个来源的账户余额。不指定 `--source` 时查询所有支持余额功能的来源。
+
+```bash
+scripts/deepseek-plugin-cli balance                    # 查询所有来源余额
+scripts/deepseek-plugin-cli balance --source <id>      # 查询指定来源余额
+scripts/deepseek-plugin-cli balance --json             # JSON 格式输出
+```
+
+### 7. 使用量查询（Usage）
+
+查询一个或多个来源的使用量。不指定 `--source` 时查询所有支持使用量功能的来源。
+
+```bash
+scripts/deepseek-plugin-cli usage                      # 查询所有来源使用量
+scripts/deepseek-plugin-cli usage --source <id>        # 查询指定来源使用量
+scripts/deepseek-plugin-cli usage --json               # JSON 格式输出
+```
+
+### 8. 模型列表查询（Models）
+
+查询一个或多个来源的可用模型列表。不指定 `--source` 时查询所有支持模型列表功能的来源。
+
+```bash
+scripts/deepseek-plugin-cli models                     # 查询所有来源模型
+scripts/deepseek-plugin-cli models --source <id>       # 查询指定来源模型
+scripts/deepseek-plugin-cli models --json              # JSON 格式输出
+```
+
+### 9. Token 用量统计（Token Counter）
 
 扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），按 30 分钟桶聚合 token 用量，支持按 Agent / 按 Model 拆分今日消耗。数据存储在本地 `~/.deepseek-plugins/`，无需联网。
 
@@ -76,7 +111,7 @@ scripts/deepseek-plugin-cli token report --days 7   # 按日用量报告
 scripts/deepseek-plugin-cli token clear             # 清空所有 token 数据
 ```
 
-### 7. 菜单栏应用（MenuBar）
+### 10. 菜单栏应用（MenuBar）
 
 启动原生 macOS 菜单栏应用，在菜单栏实时显示余额、可用状态和今日 token 用量（按 Agent / 按 Model 拆分），每 10 分钟自动刷新。仅支持 macOS。Swift 源码内嵌于 CLI 单文件，运行时自动编译，独立分发即可用，无需额外文件。
 
@@ -99,10 +134,11 @@ node --version  # 需 >= v22.5.0
 
 所有子能力共用 `deepseek-plugin-cli`，首次使用前需一次性配置：
 
-### DeepSeek API Key（余额查询）
+### 模型来源（余额/使用量/模型列表查询）
 
 ```bash
-scripts/deepseek-plugin-cli auth set deepseek
+scripts/deepseek-plugin-cli source providers   # 查看已支持的供应商
+scripts/deepseek-plugin-cli source add --type deepseek --id deepseek --api-key
 ```
 
 ### 多模态模型（识图/音频/PDF）
@@ -127,6 +163,13 @@ scripts/deepseek-plugin-cli multimodal add --base-url https://api.anthropic.com/
 scripts/deepseek-plugin-cli auth set <service>      # 设置 API Key
 scripts/deepseek-plugin-cli auth list               # 列出已注册 service
 scripts/deepseek-plugin-cli auth unset <service>    # 删除 API Key
+scripts/deepseek-plugin-cli source providers        # 列出已支持的供应商及其功能
+scripts/deepseek-plugin-cli source list             # 列出所有已配置的来源
+scripts/deepseek-plugin-cli source add --type <type> --id <id> [--name <name>] [--base-url <url>] [--features <list>] --api-key  # 新增来源
+scripts/deepseek-plugin-cli source update <id> [--name <name>] [--api-key] [--base-url <url>] [--features <list>]  # 更新来源
+scripts/deepseek-plugin-cli source remove <id>      # 删除来源
+scripts/deepseek-plugin-cli source move <id> <up|down>  # 调整来源优先级
+scripts/deepseek-plugin-cli source features <id>    # 查看来源启用的功能
 scripts/deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图
 scripts/deepseek-plugin-cli multimodal list    # 列出所有多模态模型（按调用优先级排列）
 scripts/deepseek-plugin-cli multimodal set [--base-url <url>] [--model <name>] [--api-key]  # 设置第一个模型（索引 0）
@@ -137,7 +180,9 @@ scripts/deepseek-plugin-cli multimodal move <index> <up|down>  # 调整模型优
 scripts/deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR）
 scripts/deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解
 scripts/deepseek-plugin-cli video <video> [-p <prompt>]  # 视频内容理解
-scripts/deepseek-plugin-cli balance [--json]        # 查询余额
+scripts/deepseek-plugin-cli balance [--source <id>] [--json]  # 查询余额（多来源）
+scripts/deepseek-plugin-cli usage [--source <id>] [--json]    # 查询使用量（多来源）
+scripts/deepseek-plugin-cli models [--source <id>] [--json]   # 查询可用模型列表（多来源）
 scripts/deepseek-plugin-cli token scan              # 扫描 agent 日志聚合 token
 scripts/deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）
 scripts/deepseek-plugin-cli token buckets           # 查看桶数据
@@ -147,7 +192,7 @@ scripts/deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打�
 scripts/deepseek-plugin-cli service status    # 查看后台服务运行状态
 scripts/deepseek-plugin-cli service stop      # 终止后台服务
 scripts/deepseek-plugin-cli doctor            # 环境自检（Node 版本 / API Key / 模型配置 / 网络连通性）
-scripts/deepseek-plugin-cli config init       # 交互式配置向导（引导设置 Key 和多模态模型）
+scripts/deepseek-plugin-cli config init       # 交互式配置向导（引导设置来源和多模态模型）
 scripts/deepseek-plugin-cli config export <file>  # 导出所有配置为明文 JSON（跨机器迁移用）
 scripts/deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 ```

@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchBalance, formatBalance } from '../src/balance.js';
 
-// Mock credentials module (balance.ts imports getKey from ./credentials.js)
+// Mock credentials module (balance.ts imports getKey from ./credentials.js, sources.ts imports getAllKeys)
 vi.mock('../src/credentials.js', () => ({
   getKey: vi.fn(),
+  getAllKeys: vi.fn(),
+  updateCredentials: vi.fn(),
 }));
 
-import { getKey } from '../src/credentials.js';
+import { getKey, getAllKeys } from '../src/credentials.js';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -14,6 +16,7 @@ vi.stubGlobal('fetch', mockFetch);
 describe('balance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAllKeys).mockResolvedValue({});
   });
 
   describe('fetchBalance', () => {

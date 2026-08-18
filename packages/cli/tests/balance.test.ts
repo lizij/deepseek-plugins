@@ -30,11 +30,17 @@ describe('balance', () => {
   it('balance --json 输出 JSON', () => {
     const out = run('balance --json');
     const data = JSON.parse(out);
-    expect(data).toHaveProperty('isAvailable');
-    expect(data).toHaveProperty('balances');
-    expect(Array.isArray(data.balances)).toBe(true);
-    expect(data.balances.length).toBeGreaterThan(0);
-    expect(data.balances[0]).toHaveProperty('currency');
-    expect(data.balances[0]).toHaveProperty('totalBalance');
+    // 多来源格式：数组，每个元素包含 source 和 result
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    const first = data[0];
+    expect(first).toHaveProperty('source');
+    expect(first).toHaveProperty('result');
+    expect(first.result).toHaveProperty('isAvailable');
+    expect(first.result).toHaveProperty('balances');
+    expect(Array.isArray(first.result.balances)).toBe(true);
+    expect(first.result.balances.length).toBeGreaterThan(0);
+    expect(first.result.balances[0]).toHaveProperty('currency');
+    expect(first.result.balances[0]).toHaveProperty('totalBalance');
   });
 });

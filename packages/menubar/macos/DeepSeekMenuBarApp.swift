@@ -5,14 +5,27 @@ import SwiftUI
 struct BalanceInfo: Codable {
     let currency: String
     let totalBalance: String
-    let grantedBalance: String
-    let toppedUpBalance: String
+    let grantedBalance: String?
+    let toppedUpBalance: String?
 }
 
 /// 余额查询结果
 struct BalanceResult: Codable {
     let isAvailable: Bool
     let balances: [BalanceInfo]
+}
+
+/// 单来源余额查询结果
+struct SourceBalanceResult: Codable {
+    let source: SourceInfo
+    let result: BalanceResult?
+    let error: String?
+
+    struct SourceInfo: Codable {
+        let id: String
+        let name: String
+        let type: String
+    }
 }
 
 /// Token 用量明细项（按 Agent / 按 Model 拆分）
@@ -98,15 +111,20 @@ final class BalanceManager: ObservableObject {
                     return
                 }
 
-                let result = try JSONDecoder().decode(BalanceResult.self, from: data)
+                // 尝试解析多来源格式（数组）
+                let results = try JSONDecoder().decode([SourceBalanceResult].self, from: data)
                 DispatchQueue.main.async {
-                    if let main = result.balances.first {
-                        self?.balanceText = "总额: \(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"
+                    // 取第一个有余额数据的来源展示
+                    let valid = results.first { $0.result != nil && !($0.result?.balances.isEmpty ?? true) }
+                    if let first = valid, let result = first.result, let main = result.balances.first {
+                        self?.balanceText = "\(first.source.name): \(self?.formatBalance(main.totalBalance, currency: main.currency) ?? "")"
+                        self?.statusText = "可用状态: \(result.isAvailable ? "✓ 可用" : "⚠ 不可用")"
+                        self?.statusColor = result.isAvailable ? .green : .red
                     } else {
                         self?.balanceText = "总额: 无数据"
+                        self?.statusText = "可用状态: 未知"
+                        self?.statusColor = .gray
                     }
-                    self?.statusText = "可用状态: \(result.isAvailable ? "✓ 可用" : "⚠ 不可用")"
-                    self?.statusColor = result.isAvailable ? .green : .red
                 }
             } catch {
                 DispatchQueue.main.async {

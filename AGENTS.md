@@ -83,10 +83,14 @@ source <(deepseek-plugin-cli completion bash)
 
 ### 配置 API Key
 
-#### DeepSeek API Key（余额查询用）
+#### 模型来源（余额/使用量/模型列表查询用）
 
 ```bash
-deepseek-plugin-cli auth set deepseek
+# 查看已支持的供应商
+deepseek-plugin-cli source providers
+
+# 配置第一个来源（DeepSeek 官方）
+deepseek-plugin-cli source add --type deepseek --id deepseek --api-key
 ```
 
 #### 视觉模型配置（识图用）
@@ -122,7 +126,7 @@ deepseek-plugin-cli multimodal remove 0
 ### 验证
 
 ```bash
-# 验证 DeepSeek Key：查询余额
+# 验证来源 Key：查询余额
 deepseek-plugin-cli balance
 
 # 验证视觉模型 Key：分析测试图片
@@ -135,6 +139,13 @@ deepseek-plugin-cli vision /tmp/test.png
 deepseek-plugin-cli auth set <service>      # 设置 API Key（交互式，隐藏回显）
 deepseek-plugin-cli auth list               # 列出已注册的 service
 deepseek-plugin-cli auth unset <service>    # 删除 API Key
+deepseek-plugin-cli source providers        # 列出已支持的供应商及其功能
+deepseek-plugin-cli source list             # 列出所有已配置的来源
+deepseek-plugin-cli source add --type <type> --id <id> [--name <name>] [--base-url <url>] [--features <list>] --api-key  # 新增来源
+deepseek-plugin-cli source update <id> [--name <name>] [--api-key] [--base-url <url>] [--features <list>]  # 更新来源
+deepseek-plugin-cli source remove <id>      # 删除来源
+deepseek-plugin-cli source move <id> <up|down>  # 调整来源优先级
+deepseek-plugin-cli source features <id>    # 查看来源启用的功能
 deepseek-plugin-cli vision <image> [-p <prompt>] [-d low|high]  # 识图（自动容灾切换）
 deepseek-plugin-cli multimodal list                              # 列出所有多模态模型（按调用优先级排列）
 deepseek-plugin-cli multimodal set [--base-url <url>] [--model <name>] [--api-key]  # 设置第一个模型（索引 0）
@@ -144,7 +155,9 @@ deepseek-plugin-cli multimodal remove <index>                    # 删除指定�
 deepseek-plugin-cli multimodal move <index> <up|down>            # 调整模型优先级
 deepseek-plugin-cli audio <input> [-p <prompt>]  # 音频转写（ASR，自动容灾切换）
 deepseek-plugin-cli pdf <input> [-p <prompt>]    # PDF 文档理解（自动容灾切换）
-deepseek-plugin-cli balance [--json]        # 查询余额
+deepseek-plugin-cli balance [--source <id>] [--json]  # 查询余额（多来源）
+deepseek-plugin-cli usage [--source <id>] [--json]    # 查询使用量（多来源）
+deepseek-plugin-cli models [--source <id>] [--json]   # 查询可用模型列表（多来源）
 deepseek-plugin-cli token scan [--json]     # 扫描 agent 日志聚合 token 用量
 deepseek-plugin-cli token today [--json]    # 今日 token 汇总（含按 Agent/Model 拆分）
 deepseek-plugin-cli token buckets [-n N]    # 查看最近 N 个桶数据
@@ -154,11 +167,11 @@ deepseek-plugin-cli skill install           # 安装 Skill
 deepseek-plugin-cli skill update            # 更新 Skill
 deepseek-plugin-cli completion [zsh|bash]   # 生成 shell 补全脚本
 deepseek-plugin-cli menubar [--build]       # 启动 macOS 菜单栏应用
-deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打开图形化配置界面（管理 API Key / 多模态模型 / Token 用量，后台常驻）
+deepseek-plugin-cli gui [--no-open]  # 启动/复用后台服务并打开图形化配置界面（管理来源 / 多模态模型 / Token 用量，后台常驻）
 deepseek-plugin-cli service status    # 查看后台服务运行状态
 deepseek-plugin-cli service stop      # 终止后台服务
-deepseek-plugin-cli doctor            # 环境自检（Node 版本 / API Key / 模型配置 / 网络连通性）
-deepseek-plugin-cli config init       # 交互式配置向导（引导设置 Key 和多模态模型）
+deepseek-plugin-cli doctor            # 环境自检（Node 版本 / 来源 / 模型配置 / 网络连通性）
+deepseek-plugin-cli config init       # 交互式配置向导（引导设置来源和多模态模型）
 deepseek-plugin-cli config export <file>  # 导出所有配置为明文 JSON（跨机器迁移用）
 deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 ```
