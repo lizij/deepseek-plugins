@@ -97,6 +97,21 @@
   }
   .model-item .title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
   .model-item .actions { display: flex; gap: 4px; }
+  .source-models { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .source-models summary { cursor: pointer; font-size: 13px; color: var(--muted); user-select: none; }
+  .source-models summary:hover { color: var(--text); }
+  .model-list-box {
+    margin-top: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  .model-line { font-family: monospace; }
   .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
   .toast {
     position: fixed;
@@ -293,6 +308,7 @@ function renderSources() {
 function renderSource(s, i) {
   const div = document.createElement('div');
   div.className = 'model-item';
+  div.setAttribute('data-source-id', s.id);
   const badge = '<span class="badge primary">#' + i + '</span>';
   const provider = providers.find(p => p.type === s.type);
   const providerName = provider ? provider.name : s.type;
@@ -467,14 +483,36 @@ async function showSourceBalance(id) {
 }
 
 async function showSourceModels(id) {
+  const card = document.querySelector('[data-source-id="' + CSS.escape(id) + '"]');
+  if (!card) return;
+
+  let details = card.querySelector('.source-models');
+  if (details) {
+    details.open = !details.open;
+    return;
+  }
+
+  details = document.createElement('details');
+  details.className = 'source-models';
+  details.open = true;
+  details.innerHTML = '<summary>加载中...</summary>';
+  card.appendChild(details);
+
   try {
     const arr = await api('GET', '/api/source-models?source=' + encodeURIComponent(id));
     const r = Array.isArray(arr) ? arr[0] : arr;
-    if (!r || r.error) { toast(r ? r.error : '查询失败', 'err'); return; }
+    if (!r || r.error) { toast(r ? r.error : '查询失败', 'err'); details.remove(); return; }
     const models = r.models || [];
-    alert(r.source.name + ' 可用模型 (' + models.length + ' 个):\n\n' + models.map(m => '- ' + m.id).join('\n'));
+    const list = models.map(m => {
+      const owner = m.ownedBy ? ' <span class="hint">(' + esc(m.ownedBy) + ')</span>' : '';
+      return '<div class="model-line">' + esc(m.id) + owner + '</div>';
+    }).join('');
+    details.innerHTML =
+      '<summary>' + r.source.name + ' 可用模型（' + models.length + ' 个，点击折叠）</summary>' +
+      '<div class="model-list-box">' + (list || '<div class="hint">暂无模型</div>') + '</div>';
   } catch (e) {
     toast(e.message, 'err');
+    details.remove();
   }
 }
 
