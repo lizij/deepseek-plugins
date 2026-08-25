@@ -95,10 +95,14 @@ deepseek-plugin-cli source add --type deepseek --id deepseek --api-key
 
 #### 视觉模型配置（识图用）
 
+DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp`（仅支持图片、按 token 计费、复用 DeepSeek 主 Key）可作识图首选；若需音频/PDF/视频或想在官方模型之外备选，再配置第三方视觉模型：
+
 ```bash
 # 配置第一个模型（索引 0，base_url / model / API Key 一步完成，API Key 交互式隐藏输入）
 deepseek-plugin-cli multimodal set --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.6v --api-key
 ```
+
+> 当模型本身是 DeepSeek 官方视觉模型时，图片直接走模型原生识图能力，不经过插件；音频/PDF/视频仍走插件。详见各 Agent 的 skill 调用决策。
 
 #### 多模型容灾（可选）
 

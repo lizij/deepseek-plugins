@@ -3,23 +3,24 @@ name: deepseek-plugin-skill
 description: |
   当用户需要识别图片、分析图像内容、转写音频、理解 PDF 文档、查询多来源账户余额/使用量、统计 token 用量或配置多模态模型时使用此 skill。
   为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助识图、语音转写、文档理解、多来源余额/使用量查询与 token 用量统计能力。
+  当当前模型本身就是 DeepSeek 官方视觉模型（deepseek-v4-flash-vision-exp）时，图片识别优先使用模型原生能力，不经过本 skill；音频/PDF/视频仍通过本 skill 处理。
   通过 scripts/deepseek-plugin-cli 调用多模态模型分析图片/音频/PDF，查询多个模型来源的账户余额/使用量，扫描本地 agent 日志统计 token 消耗。
   支持多模态模型容灾切换和多来源余额查询。
 license: MIT
 compatibility: Requires Node.js 22.5+, supports Claude Code, TRAE, Codex, Cursor, opencode, and any agent that can execute shell commands
 metadata:
-  version: "1.3.1"
+  version: "1.4.0"
 ---
 
 # DeepSeek Plugin Skill
 
-为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助能力集合。通过 `scripts/deepseek-plugin-cli` 调用各项子能力。
+为 DeepSeek V4 Pro/Flash 等纯文本模型提供辅助能力集合。通过 `scripts/deepseek-plugin-cli` 调用各项子能力。若当前模型本身具备原生多模态能力（如 DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp`），图片识别优先使用模型原生能力。
 
 ## 子能力
 
 ### 1. Vision Helper（辅助识图）
 
-为纯文本模型补充图片识别能力，通过调用第三方多模态模型分析图片。
+为纯文本模型补充图片识别能力，通过调用第三方多模态模型分析图片。若当前模型就是 DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp`，应直接用模型原生识图能力，不调用本子能力。
 
 详见 [references/vision-helper.md](references/vision-helper.md)
 
@@ -147,6 +148,12 @@ scripts/deepseek-plugin-cli source add --type deepseek --id deepseek --api-key
 
 ```bash
 scripts/deepseek-plugin-cli multimodal set --base-url https://open.bigmodel.cn/api/paas/v4 --model glm-4.6v --api-key
+```
+
+使用 DeepSeek 官方视觉模型识图（可选）：`deepseek-v4-flash-vision-exp` 是 DeepSeek 官方视觉模型，仅支持图片、cost 低，可作为识图首选。它复用 DeepSeek 主 API Key（base_url 为 `https://api.deepseek.com`）。注意它**不支持音频/PDF/视频**，因此在多模态模型数组中遇到其他模态时容灾链会自动切换到后序支持该模态的模型：
+
+```bash
+scripts/deepseek-plugin-cli multimodal add --base-url https://api.deepseek.com --model deepseek-v4-flash-vision-exp --api-key
 ```
 
 ### 多模型容灾（可选）

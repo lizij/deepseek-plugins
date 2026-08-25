@@ -8,6 +8,8 @@
 - 当前模型支持 PDF/文件输入（如 `claude-3.5-sonnet`、`gpt-4o`、`gemini-2.0-flash`）→ **禁止调用本工具**，直接处理 PDF
 - 当前模型不支持 PDF 输入（如 `deepseek-v4-pro`、`deepseek-v4-flash`）→ **调用本工具**
 
+> 说明：DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp` **不支持 PDF/文件输入**。即便当前模型是该视觉模型，PDF 文档理解也**必须**调用本工具。
+
 ## 调用方式
 
 执行 `scripts/deepseek-plugin-cli pdf` 命令，stdout 为模型文本响应，stderr 为错误信息。

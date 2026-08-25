@@ -1,12 +1,15 @@
 # Vision Helper（辅助识图）
 
-为纯文本模型提供辅助识图能力，帮助无视觉能力的模型（如 `deepseek-v4-pro`、`deepseek-v4-flash`）识别图片。
+为纯文本模型提供辅助识图能力，帮助无视觉能力的模型（如 `deepseek-v4-pro`、`deepseek-v4-flash`）识别图片。若当前模型具备原生识图能力，应优先使用模型原生能力，不经由本工具。
 
 ## 调用决策（必须遵守）
 
 **调用前先判断当前对话模型**：
-- 当前模型支持图片输入（如 `gpt-4o`、`claude-3.5-sonnet`、`gemini-2.0-flash`、`qwen-vl-max`）→ **禁止调用本工具**，直接处理图片
+- 当前模型支持图片输入（如 `gpt-4o`、`claude-3.5-sonnet`、`gemini-2.0-flash`、`qwen-vl-max`、**`deepseek-v4-flash-vision-exp`**）→ **禁止调用本工具**，直接处理图片
+  - 若当前模型就是 **`deepseek-v4-flash-vision-exp`**（DeepSeek 官方视觉模型），它原生支持图片输入，应直接用模型原生识图能力处理图片，**不要**调用本 skill 或 `deepseek-plugin-cli vision`
 - 当前模型不支持图片输入（如 `deepseek-v4-pro`、`deepseek-v4-flash`）→ **调用本工具**
+
+> 说明：DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp` 仅支持图片，不支持音频/PDF/视频。即便当前模型是该视觉模型，音频/PDF/视频仍需通过本插件的 `audio` / `pdf` / `video` 子能力处理。
 
 ## 调用方式
 

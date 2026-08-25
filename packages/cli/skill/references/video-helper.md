@@ -8,6 +8,8 @@
 - 当前模型支持视频输入（如 `gpt-4o`、`gemini-2.0-flash`、`qwen-vl-max`）→ **禁止调用本工具**，直接处理视频
 - 当前模型不支持视频输入（如 `deepseek-v4-pro`、`deepseek-v4-flash`）→ **调用本工具**
 
+> 说明：DeepSeek 官方视觉模型 `deepseek-v4-flash-vision-exp` **不支持视频输入**。即便当前模型是该视觉模型，视频理解也**必须**调用本工具。
+
 ## 调用方式
 
 执行 `scripts/deepseek-plugin-cli video` 命令，stdout 为模型文本响应，stderr 为错误信息。
