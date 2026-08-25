@@ -226,6 +226,10 @@ deepseek-plugin-cli menubar
 deepseek-plugin-cli menubar --build
 ```
 
+**设计约定**
+- 每次启动 `menubar` 都会从内嵌的 Swift 源码自动重新编译（`--build` 仅用于强制重编），编译产物落在临时目录，**不写入 `release/`**。
+- `release/` 目录固定只保留 `deepseek-plugin-cli` 可执行单文件、`deepseek-plugin-skill/` 与 `deepseek-plugin-skill.zip` 三样，禁止放入其他构建产物（如 menubar 编译产物）。
+
 菜单栏图标为 🐳 emoji，点击下拉菜单显示：
 - **总额**：点击跳转 usage 页面
 - **可用状态**：显示账户是否可用（绿色=可用 / 红色=不可用）
