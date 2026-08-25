@@ -12,7 +12,7 @@ import {
   withScanLock,
 } from './storage.js';
 import { discoverScanTargets, readTargetLines } from './scanner.js';
-import { extractProject, parseLine } from './parser.js';
+import { extractProject, parseDeepseekHarnessLines, parseLine } from './parser.js';
 import type { ScanResult, TokenBucket } from './types.js';
 
 /** 扫描所有 agent 日志，增量解析并聚合到桶（跨进程互斥，防止并发计数重复/丢失）。 */
@@ -85,9 +85,16 @@ export async function scanAndAggregate(): Promise<ScanResult> {
 
     const project = extractProject(target.source, target.path, lines);
 
-    for (const line of newLines) {
-      const entry = parseLine(line, target.source);
-      if (!entry) continue;
+    // deepseek-harness 从 request/context 事件带出 model，需顺序扫全量 lines 解析；
+    // 因此走批量解析（自 startLine 起的增量段），其余 source 保留单行 parseLine。
+    const entries =
+      target.source === 'deepseek-harness'
+        ? parseDeepseekHarnessLines(lines, startLine)
+        : newLines
+            .map((line) => parseLine(line, target.source))
+            .filter((e): e is NonNullable<typeof e> => e !== null);
+
+    for (const entry of entries) {
       entry.project = project;
 
       newEntries++;

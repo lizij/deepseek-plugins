@@ -15,7 +15,7 @@ export function registerToken(program: Command) {
 
   tokenCmd
     .command('scan')
-    .description('扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），聚合 token 用量')
+    .description('扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode / DeepSeek Harness），聚合 token 用量')
     .option('--json', '输出 JSON 格式')
     .action(async (opts) => {
       const result = await scanAndAggregate();

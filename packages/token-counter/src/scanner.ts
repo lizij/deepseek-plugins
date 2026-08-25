@@ -1,8 +1,9 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { decompressZstd } from './zstd.js';
 
 // node:sqlite 是内置模块，createRequire 仅用于加载它；路径用兜底值兼容 CJS 打包（import.meta.url 可能为 undefined）
 const require = createRequire(import.meta.url || 'file:///noop.js');
@@ -100,23 +101,91 @@ export function findOpenCodeDb(): ScanTarget[] {
   return targets;
 }
 
+/** deepseek-harness 会话日志根目录（~/.dsh/sessions/） */
+export function harnessSessionsRoot(): string {
+  return join(homedir(), '.dsh', 'sessions');
+}
+
+/**
+ * deepseek-harness 将每个会话写成一个目录，内含多帧 zstd 压缩的 session.jsonl.zstd
+ * （compression:'none' 时为 session.jsonl）。目录名形如 --<规范化cwd>--，保留可读项目路径。
+ */
+export async function findHarnessLogs(): Promise<ScanTarget[]> {
+  const base = harnessSessionsRoot();
+  if (!existsSync(base)) return [];
+  const targets: ScanTarget[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // 忽略权限错误
+    }
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full);
+      } else if (e.name === 'session.jsonl.zstd' || e.name === 'session.jsonl') {
+        targets.push({ path: full, source: 'deepseek-harness' });
+      }
+    }
+  };
+  await walk(base);
+  return targets;
+}
+
 export async function discoverScanTargets(): Promise<ScanTarget[]> {
-  const [claude, codex, cursor, opencode] = await Promise.all([
+  const [claude, codex, cursor, opencode, harness] = await Promise.all([
     findClaudeCodeLogs(),
     findCodexLogs(),
     findCursorLogs(),
     Promise.resolve(findOpenCodeDb()),
+    findHarnessLogs(),
   ]);
-  return [...claude, ...codex, ...cursor, ...opencode];
+  return [...claude, ...codex, ...cursor, ...opencode, ...harness];
 }
 
-/** 读取扫描目标的内容行。opencode 从 SQLite 导出 assistant 消息为 JSON 行，其余按文本文件读取。 */
+/** 读取扫描目标的内容行。opencode 从 SQLite 导出 assistant 消息为 JSON 行，harness 解压 zstd 帧，其余按文本文件读取。 */
 export async function readTargetLines(target: ScanTarget): Promise<string[]> {
   if (target.source === 'opencode') {
     return readOpenCodeMessages(target.path);
   }
+  if (target.source === 'deepseek-harness') {
+    return readHarnessLines(target.path);
+  }
   const content = await readFile(target.path, 'utf-8');
   return content.split('\n').filter((l) => l.trim().length > 0);
+}
+
+/** 读取 deepseek-harness 会话日志：zstd 文件多帧解压后按行返回，raw jsonl 直接读取。 */
+export function readHarnessLines(path: string): string[] {
+  try {
+    if (path.endsWith('.jsonl.zstd')) {
+      const buffer = readFileSync(path);
+      const text = decompressZstd(buffer);
+      if (text === null) throw new Error('zstd decompress failed');
+      return text.split('\n').filter((l) => l.trim().length > 0);
+    }
+    const content = readFileSync(path, 'utf-8');
+    return content.split('\n').filter((l) => l.trim().length > 0);
+  } catch (err) {
+    warnHarnessReadFailure(err);
+    return [];
+  }
+}
+
+let warnedHarnessRead = false;
+
+/** deepseek-harness 读取失败时输出一次性警告，避免数据静默缺失。 */
+function warnHarnessReadFailure(err: unknown): void {
+  if (warnedHarnessRead) return;
+  warnedHarnessRead = true;
+  const msg = err instanceof Error ? err.message : String(err);
+  const zstdHint = /zstd|decompress/i.test(msg)
+    ? ' 当前 Node.js 版本缺少内置 zstd 支持（需 Node.js 22.22+），deepseek-harness token 统计将跳过。'
+    : '';
+  console.warn(`⚠ 无法读取 deepseek-harness 日志，deepseek-harness token 统计将跳过（${msg}）。${zstdHint}`);
 }
 
 /** 从 opencode SQLite 导出含 tokens 的 assistant 消息为 JSON 行（按 time_created, id 排序） */

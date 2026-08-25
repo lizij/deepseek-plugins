@@ -1,8 +1,8 @@
 {
   "name": "@deepseek-plugins/token-counter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Token usage counter: scan agent logs (Claude Code / Codex / Cursor / opencode) and aggregate by 30-min buckets",
+  "description": "Token usage counter: scan agent logs (Claude Code / Codex / Cursor / opencode / DeepSeek Harness) and aggregate by 30-min buckets",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"
