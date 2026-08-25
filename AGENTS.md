@@ -10,7 +10,7 @@ deepseek-plugins 是一组围绕 DeepSeek API 的个人辅助工具集合，目�
 
 - **vision-helper**：辅助多模态工具，通过调用第三方多模态模型为 DeepSeek 等纯文本模型补充图片/音频/PDF 识别能力。
 - **menubar**：原生 macOS 菜单栏应用，在菜单栏实时显示 DeepSeek API 账户余额和 Token 用量等信息，无需第三方依赖。
-- **token-counter**：Token 用量统计工具，扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode），按 30 分钟桶聚合 token 消耗。
+- **token-counter**：Token 用量统计工具，扫描本地 agent 日志（Claude Code / Codex / Cursor / opencode / DeepSeek Harness），按 30 分钟桶聚合 token 消耗。
 
 目标用户：使用 DeepSeek API 进行日常开发的个人用户，尤其是需要识图能力和账户监控的开发者。
 
@@ -191,6 +191,7 @@ deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 | Codex | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 `~/.codex/logs/`） |
 | Cursor | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 Cursor 日志目录） |
 | opencode | ✅ | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 `opencode.db`） |
+| DeepSeek Harness | — | ✅ | 确保 CLI 在 PATH 中即可（Token 统计自动扫描 `~/.dsh/sessions/`） |
 | 其他 Agent | ✅ | — | 任何支持执行 shell 命令的 agent，确保 CLI 在 PATH 中即可 |
 
 #### TRAE
@@ -201,13 +202,14 @@ deepseek-plugin-cli config import <file>  # 从 JSON 文件导入配置
 
 确保 `deepseek-plugin-cli` 在 PATH 中，视觉模型配置已通过 CLI 完成。
 
-#### Codex / Cursor / opencode
+#### Codex / Cursor / opencode / DeepSeek Harness
 
 这些平台无需安装 Skill，只要 `deepseek-plugin-cli` 在 PATH 中，即可在对话中通过 shell 命令调用多模态能力。Token 统计会自动扫描对应平台的日志目录：
 
 - **Codex**：`~/.codex/logs/` 或 `~/.config/codex/logs/`
 - **Cursor**：`~/Library/Application Support/Cursor/logs/`
 - **opencode**：`~/.local/share/opencode/opencode.db`（依赖内置 `node:sqlite`，Node 22.5–22.12 需 `--experimental-sqlite` 或升级至 22.13+，否则读取失败时会输出一次性警告）
+- **DeepSeek Harness**：`~/.dsh/sessions/`（多帧 zstd 会话日志，需 Node.js 22.22+ 内置 zstd 支持；缺失时输出一次性警告）
 
 #### 其他 Agent
 
@@ -261,6 +263,13 @@ deepseek-plugin-cli vision <图片路径|URL|base64> [-p "提问内容"] [-d low
 - 改动完成后禁止直接 `git commit` / `git push`，须等待用户确认后手动执行。
 - 代码风格：函数保持原子性，核心逻辑不耦合外部状态校验；API 注释简洁（一两句说明功能），避免描述实现细节。
 - 文档/方案禁止包含本地绝对路径、真实 ID 等敏感信息，统一使用相对路径。
+- **每次改动后必须重新编译并跑单元测试，确认通过后才能提交**。从仓库根执行：
+  - `pnpm build`——全仓编译（等价 `pnpm -r build`）
+  - `pnpm test`——全仓单元测试（等价 `pnpm -r test`）
+  - `pnpm typecheck`——全仓类型检查（等价 `pnpm -r exec tsc --noEmit`）
+  - 单包调试可用 `pnpm --filter <包名> build/test`（如 `--filter @deepseek-plugins/token-counter`）
+- **release/ 产物每次编译后都会重新生成**：`pnpm build` 会自动产出 `release/deepseek-plugin-cli`、`release/deepseek-plugin-skill/` 与 `release/deepseek-plugin-skill.zip`。提交前需确认这些产物已随本次改动更新（时间戳/大小与本次构建一致）。
+- **改动需按需求落地到对应场景**：当需求涉及 CLI、Skill、menubar、web 图形界面等多个端时，须在各端同步落地并验证。注意边界——menubar 编译产物落在临时目录、不写入 `release/`（见「原生菜单栏应用」设计约定），web 页为后台服务的图形化界面（`deepseek-plugin-cli gui`）。
 
 ### Version 自更新规则
 
